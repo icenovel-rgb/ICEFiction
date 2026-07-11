@@ -1,0 +1,25 @@
+appId: com.icenovel.icefiction
+productName: ICEFiction
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - icon.png
+win:
+  target: nsis
+  icon: build/icon.png
+mac:
+  target: dmg
+  icon: build/icon.png
+  category: public.app-category.productivity
+  # 무서명(윈도우와 동일 방침) — Apple Developer ID 없이 빌드. 배포 시 서명·공증으로 교체.
+  identity: null
+  artifactName: ${productName}-${version}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  # 바탕화면 바로가기는 build/installer.nsh의 체크박스 페이지에서 사용자 선택으로 생성.
+  createDesktopShortcut: false
+  artifactName: ${productName}-Setup-${version}.${ext}

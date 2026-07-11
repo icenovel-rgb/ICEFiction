@@ -1,0 +1,164 @@
+/**
+ * 보기·집필 환경 설정 패널 — 줄번호/테마/글꼴/글자크기/줄간격/색(BLUEPRINT §8.1).
+ * 값은 useSettings(localStorage)에 저장되고 applySettings로 CSS 변수에 즉시 반영된다.
+ */
+import { effectiveColors, FONTS, THEMES, useSettings, type ThemeKey } from '../state/settings'
+
+/** 마크다운 문법 치트시트 — 원고는 표준 .md로 저장되므로 어디서든 통하는 문법(§6.1). */
+const MD_ROWS: { code: string; desc: string }[] = [
+  { code: '# 제목', desc: '큰 제목 (##·### 로 소제목)' },
+  { code: '**굵게**', desc: '굵은 글씨' },
+  { code: '*기울임*', desc: '기울인 글씨' },
+  { code: '~~취소선~~', desc: '취소선' },
+  { code: '> 인용문', desc: '인용 블록' },
+  { code: '- 항목', desc: '글머리 목록 (1. 은 번호 목록)' },
+  { code: '![](경로)', desc: '이미지 넣기 (자료를 끌어놓으면 자동 삽입)' },
+  { code: '[글자](주소)', desc: '링크' },
+  { code: '`코드`', desc: '고정폭 글자' },
+  { code: '---', desc: '가로 구분선' }
+]
+
+function MarkdownHelp(): React.ReactElement {
+  return (
+    <details className="vs-mdhelp">
+      <summary>마크다운 문법 도움말</summary>
+      <table>
+        <tbody>
+          {MD_ROWS.map((r) => (
+            <tr key={r.code}>
+              <td>
+                <code>{r.code}</code>
+              </td>
+              <td>{r.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="vs-mdhelp-note">
+        커서가 없는 줄은 기호가 숨겨져 결과처럼 보입니다(라이브 프리뷰). AI에게 문법을 물어봐도 됩니다.
+      </p>
+    </details>
+  )
+}
+
+export function ViewSettings(): React.ReactElement {
+  const s = useSettings()
+  const colors = effectiveColors(s)
+
+  return (
+    <div className="viewset">
+      <div className="vs-field">
+        <span>앱 모드 — 도구창 전체 밝기 (워드/노션처럼)</span>
+        <div className="vs-appmode">
+          <button
+            className={s.appMode === 'light' ? 'active' : ''}
+            onClick={() => s.patch({ appMode: 'light' })}
+          >
+            ☀ 라이트
+          </button>
+          <button
+            className={s.appMode === 'dark' ? 'active' : ''}
+            onClick={() => s.patch({ appMode: 'dark' })}
+          >
+            ☾ 다크
+          </button>
+        </div>
+      </div>
+
+      <label className="vs-row vs-switch">
+        <span>줄번호</span>
+        <input
+          type="checkbox"
+          checked={s.showLineNumbers}
+          onChange={(e) => s.patch({ showLineNumbers: e.target.checked })}
+        />
+      </label>
+
+      <div className="vs-field">
+        <span>집필 테마 — 원고 종이 배경 (도구창은 항상 어두운 톤)</span>
+        <div className="vs-themes">
+          {(Object.keys(THEMES) as ThemeKey[]).map((key) => (
+            <button
+              key={key}
+              className={`vs-theme${s.theme === key && !s.customBg && !s.customText ? ' active' : ''}`}
+              style={{ background: THEMES[key].bg, color: THEMES[key].text }}
+              onClick={() => s.setTheme(key)}
+            >
+              {THEMES[key].label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label className="vs-field">
+        <span>글꼴</span>
+        <select value={s.fontKey} onChange={(e) => s.patch({ fontKey: e.target.value })}>
+          {FONTS.map((f) => (
+            <option key={f.key} value={f.key}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="vs-field">
+        <span>글자 크기 — {s.fontSizePx}px</span>
+        <input
+          type="range"
+          min={13}
+          max={26}
+          step={1}
+          value={s.fontSizePx}
+          onChange={(e) => s.patch({ fontSizePx: Number(e.target.value) })}
+        />
+      </label>
+
+      <label className="vs-field">
+        <span>줄 간격 — {s.lineHeight.toFixed(1)}</span>
+        <input
+          type="range"
+          min={1.4}
+          max={2.6}
+          step={0.1}
+          value={s.lineHeight}
+          onChange={(e) => s.patch({ lineHeight: Number(e.target.value) })}
+        />
+      </label>
+
+      <div className="vs-field">
+        <span>색 직접 고르기</span>
+        <div className="vs-colors">
+          <label className="vs-color">
+            <input
+              type="color"
+              value={colors.text}
+              onChange={(e) => s.patch({ customText: e.target.value })}
+            />
+            글자색
+          </label>
+          <label className="vs-color">
+            <input
+              type="color"
+              value={colors.bg}
+              onChange={(e) => s.patch({ customBg: e.target.value })}
+            />
+            배경색
+          </label>
+        </div>
+        {(s.customBg || s.customText) && (
+          <button className="vs-reset" onClick={() => s.resetColors()}>
+            테마 기본색으로
+          </button>
+        )}
+      </div>
+
+      <div className="vs-preview" style={{ background: colors.bg, color: colors.text }}>
+        <span style={{ fontFamily: FONTS.find((f) => f.key === s.fontKey)?.stack }}>
+          비가 쏟아지기 시작했다.
+        </span>
+      </div>
+
+      <MarkdownHelp />
+    </div>
+  )
+}

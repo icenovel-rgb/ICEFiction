@@ -1,0 +1,47 @@
+{
+  "name": "icefiction",
+  "version": "0.4.0",
+  "description": "소설 집필 데스크톱 프로그램 — 로컬 폴더 기반 원고·설정 관리 + AI 어시스턴트",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "author": "icenovel",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "tsx tests/mdembed.test.mts && tsx tests/project.test.mts",
+    "test:md": "tsx tests/mdembed.test.mts",
+    "test:ai": "tsx tests/ai.test.mts",
+    "test:e2e": "node tests/editor.e2e.mjs",
+    "test:ai:e2e": "node tests/ai.e2e.mjs",
+    "dist": "electron-vite build && electron-builder --win --publish never",
+    "dist:mac": "electron-vite build && electron-builder --mac --publish never"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.7.1",
+    "@codemirror/lang-markdown": "^6.3.1",
+    "@codemirror/language": "^6.10.8",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.36.1",
+    "codemirror": "^6.0.1",
+    "gray-matter": "^4.0.3",
+    "unpdf": "^1.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.2",
+    "electron-vite": "^5.0.0",
+    "playwright-core": "^1.61.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3",
+    "vite": "^7.0.0",
+    "zustand": "^5.0.14"
+  }
+}

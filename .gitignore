@@ -1,0 +1,13 @@
+node_modules/
+out/
+release/
+dist/
+*.log
+.env
+.env.*
+.DS_Store
+Thumbs.db
+
+# 소설 프로젝트 캐시 규약 (§4)
+.ice/
+.thumbs/

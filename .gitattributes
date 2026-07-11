@@ -1,0 +1,5 @@
+# 저장소는 LF로 통일(크로스플랫폼 — Windows/macOS 이식). 체크아웃은 플랫폼 기본.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
