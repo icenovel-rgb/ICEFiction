@@ -11,14 +11,38 @@
  * updateListener가 그 변경을 사용자 입력으로 오인해 store에 되쓰지 않게 한다.
  */
 import { useEffect, useRef } from 'react'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
 import { useStore } from '../state/store'
 import { setEditorView } from '../lib/editorBridge'
 import { markdownExtras } from '../lib/markdownView'
+import {
+  alignCommand,
+  exitQuoteOnEmptyLine,
+  indentWithFullWidthSpace,
+  outdentFullWidthSpace
+} from '../lib/editorCommands'
 import { toStandardEmbed } from '../../../shared/mdEmbed'
+
+/**
+ * 집필 키맵 — **Prec.highest로 올려야 한다.** lang-markdown이 자기 키맵을 Prec.high로 넣기 때문에
+ * (Enter → insertNewlineContinueMarkup), 기본 우선순위로는 우리 Enter가 절대 실행되지 않는다(실측).
+ *
+ * Tab = 전각 공백 들여쓰기(한글 원고 관례) · Enter = 빈 인용 줄이면 인용문 탈출 ·
+ * Ctrl+Shift+{L,E,R,J} = 선택 문단 정렬, Ctrl+Shift+0 = 해제.
+ */
+const writingKeymap = [
+  { key: 'Enter', run: exitQuoteOnEmptyLine }, // false면 마크다운 기본(인용·목록 이어쓰기)으로 넘어간다
+  { key: 'Tab', run: indentWithFullWidthSpace },
+  { key: 'Shift-Tab', run: outdentFullWidthSpace },
+  { key: 'Mod-Shift-l', run: alignCommand('left') },
+  { key: 'Mod-Shift-e', run: alignCommand('center') },
+  { key: 'Mod-Shift-r', run: alignCommand('right') },
+  { key: 'Mod-Shift-j', run: alignCommand('justify') },
+  { key: 'Mod-Shift-0', run: alignCommand(null) }
+]
 
 /** 인앱 자료 드래그의 dataTransfer에서 프로젝트 상대경로를 뽑는다(ice-asset URL 또는 커스텀 타입). */
 function assetRelFromDrop(dt: DataTransfer): string {
@@ -88,6 +112,7 @@ export function Editor(): React.ReactElement {
         doc: useStore.getState().body,
         extensions: [
           history(),
+          Prec.highest(keymap.of(writingKeymap)), // markdown()의 Prec.high 키맵보다 위
           keymap.of([...defaultKeymap, ...historyKeymap]),
           markdown(),
           ...markdownExtras,

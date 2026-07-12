@@ -13,6 +13,7 @@ import { Editor } from './components/Editor'
 import { Inspector } from './components/Inspector'
 import { Library } from './components/Library'
 import { Lightbox } from './components/Lightbox'
+import { SectionGallery } from './components/SectionGallery'
 import { StatusBar } from './components/StatusBar'
 import { ViewSettings } from './components/ViewSettings'
 import { useStore } from './state/store'
@@ -194,8 +195,11 @@ function Workspace(): React.ReactElement {
       </header>
       <div className="main">
         {binderOpen && <Binder />}
+        {/* 에디터(CM6 호스트)는 항상 마운트해 둔다 — 언마운트하면 뷰가 다시 안 만들어진다(Editor.tsx 주석).
+            섹션 갤러리는 그 위를 덮는 오버레이로 띄운다. */}
         <div className="content">
           <Editor />
+          <SectionGallery />
         </div>
         {rightOpen && (
         <div className="rightpanel">

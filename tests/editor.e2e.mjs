@@ -29,6 +29,18 @@ async function main() {
     await page.waitForSelector('.lib-new', { timeout: 15000 })
     console.log('  ✓ 책장(서재) 화면 로드')
 
+    // 기본 글꼴 = 내장 나눔고딕(새 프로필). PC에 폰트가 없어도 같은 판면이 나오게.
+    const paperFont = await page.evaluate(() =>
+      document.documentElement.style.getPropertyValue('--paper-font')
+    )
+    assert(
+      paperFont.includes('NanumGothic'),
+      `기본 글꼴이 나눔고딕이 아님: ${paperFont}`
+    )
+    const gothicLoaded = await page.evaluate(async () => (await document.fonts.load('16px "NanumGothic"')).length)
+    assert(gothicLoaded > 0, '내장 나눔고딕이 로드되지 않음')
+    console.log('  ✓ 기본 글꼴: 내장 나눔고딕(실제 로드 확인)')
+
     // 새 소설 → 입력 모달(window.prompt 대체) → 만들기
     await page.click('.lib-new')
     await page.waitForSelector('.dialog-input', { timeout: 5000 })
@@ -260,14 +272,121 @@ async function main() {
 
     // 문단 정렬(보기 설정) — 기본 양쪽(justify), 버튼으로 변경 시 CSS 변수(--paper-align) 반영
     await page.click('.rightpanel-tabs button:has-text("보기")')
-    await page.waitForSelector('.vs-align', { timeout: 4000 })
+    await page.waitForSelector('.vs-align-doc', { timeout: 4000 })
     const alignVar = () =>
       page.evaluate(() => document.documentElement.style.getPropertyValue('--paper-align').trim())
     assert.equal(await alignVar(), 'justify', `기본 문단 정렬이 양쪽(justify)이 아님: ${await alignVar()}`)
-    await page.click('.vs-align button:has-text("왼쪽")')
+    await page.click('.vs-align-doc button:has-text("왼쪽")')
     assert.equal(await alignVar(), 'left', '문단 정렬(왼쪽) 변경이 CSS 변수에 반영 안 됨')
-    await page.click('.vs-align button:has-text("양쪽")') // 원복
-    console.log('  ✓ 문단 정렬: 기본 양쪽 + 좌/양쪽 전환 반영')
+    await page.click('.vs-align-doc button:has-text("양쪽")') // 원복
+    console.log('  ✓ 문단 정렬(문서 기본값): 양쪽 기본 + 전환 반영')
+
+    // ── 인용문 탈출 — 빈 인용 줄에서 Enter 한 번이면 인용을 빠져나온다 ──
+    // (lang-markdown 기본은 인용을 계속 이어붙여 Enter 3번을 눌러야 나온다 → 모르면 이후 본문이
+    //  전부 인용문에 갇힌다. 실측 버그. 화면은 '>'를 숨기므로 **저장된 원본**으로 검증해야 한다.)
+    await page.click('.cm-content')
+    await page.keyboard.press('Control+A')
+    await page.keyboard.type('> 인용문입니다')
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('다시 본문')
+    await page.waitForTimeout(2800)
+    const rawQuote = await fs.readFile(join(mdDir, files[0]), 'utf8')
+    const bodyQuote = rawQuote.split('---').slice(2).join('---')
+    assert(
+      bodyQuote.includes('> 인용문입니다'),
+      `인용문이 사라짐:\n${JSON.stringify(bodyQuote)}`
+    )
+    assert(
+      !/>\s*다시 본문/.test(bodyQuote),
+      `Enter 2번으로 인용문을 못 빠져나옴 — 본문이 인용에 갇힘:\n${JSON.stringify(bodyQuote)}`
+    )
+    assert(
+      /다시 본문/.test(bodyQuote) && /\n\s*\n\s*다시 본문/.test(bodyQuote),
+      `인용문과 본문 사이 빈 줄이 없음(마크다운 lazy continuation으로 다시 인용에 빨려듦):\n${JSON.stringify(bodyQuote)}`
+    )
+    console.log('  ✓ 인용문 탈출: 빈 인용 줄에서 Enter → 본문으로 복귀(빈 줄 확보)')
+
+    // ── 탭키 들여쓰기 — 전각 공백(U+3000). 마크다운 코드블록 오인을 피하는 한글 원고 관례 ──
+    await page.click('.cm-content')
+    await page.keyboard.press('Control+A')
+    await page.keyboard.type('들여쓸 문장')
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Tab')
+    const indented = await page.evaluate(() => {
+      const line = [...document.querySelectorAll('.cm-line')].find((l) =>
+        (l.textContent || '').includes('들여쓸 문장')
+      )
+      return line ? line.textContent : ''
+    })
+    assert.equal(indented.charCodeAt(0), 0x3000, `Tab이 전각 공백을 넣지 않음: ${JSON.stringify(indented)}`)
+    await page.waitForTimeout(2800)
+    const rawTab = await fs.readFile(join(mdDir, files[0]), 'utf8')
+    assert(rawTab.includes('　들여쓸 문장'), `전각 공백 들여쓰기가 파일에 저장 안 됨:\n${JSON.stringify(rawTab)}`)
+    assert(!/^\t|^ {4}/m.test(rawTab.split('---').pop()), '탭문자·4칸 공백이 들어가 코드블록이 될 위험')
+    // Shift+Tab 으로 되돌리기
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Shift+Tab')
+    const outdented = await page.evaluate(() => {
+      const line = [...document.querySelectorAll('.cm-line')].find((l) =>
+        (l.textContent || '').includes('들여쓸 문장')
+      )
+      return line ? line.textContent : ''
+    })
+    assert.notEqual(outdented.charCodeAt(0), 0x3000, 'Shift+Tab이 들여쓰기를 제거 못함')
+    console.log('  ✓ 탭 들여쓰기: 전각 공백 삽입/제거 + 파일 반영(코드블록 안 됨)')
+
+    // ── 선택한 부분만 정렬 — 드래그 선택 → <div align="center">로 파일에 기록, 태그는 화면에서 숨김 ──
+    await page.click('.cm-content')
+    await page.keyboard.press('Control+A')
+    // 가운데 갈 문단은 **두 줄**로 — 한 줄짜리로 테스트하면 "첫 줄만 정렬 누락" 버그를 놓친다(실측).
+    await page.keyboard.type('첫 문단\n\n가운데 갈 문단\n둘째 줄도 가운데\n\n끝 문단')
+    // 문단 일부만 드래그 선택 → 문단 전체가 정렬돼야 한다
+    await page.locator('.cm-line', { hasText: '둘째 줄도 가운데' }).click()
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Shift+End')
+    await page.click('.vs-align-sel button:has-text("가운데")')
+
+    await page.waitForTimeout(2800)
+    const rawAlign = await fs.readFile(join(mdDir, files[0]), 'utf8')
+    assert(
+      rawAlign.includes('<div align="center">') && rawAlign.includes('</div>'),
+      `선택 문단 정렬이 <div align>으로 기록 안 됨:\n${rawAlign}`
+    )
+    // 감싸는 과정에서 본문이 유실되지 않았는지(모든 문단이 살아 있어야 한다)
+    for (const p of ['첫 문단', '가운데 갈 문단', '둘째 줄도 가운데', '끝 문단']) {
+      assert(rawAlign.includes(p), `정렬 적용 중 본문 유실: "${p}" 없음\n${rawAlign}`)
+    }
+    assert(!/<div align="center">\s*\n\s*\n\s*<\/div>/.test(rawAlign), '빈 정렬 블록이 생김')
+
+    // 선택한 문단의 **모든 줄**에 정렬이 붙었는지 + 다른 문단은 안 붙었는지
+    const centered = await page.evaluate(() => ({
+      centeredLines: [...document.querySelectorAll('.cm-line.cm-align-center')].map((l) => l.textContent),
+      otherClasses: [...document.querySelectorAll('.cm-line')]
+        .filter((l) => (l.textContent || '').includes('첫 문단'))
+        .map((l) => l.className)
+        .join(' ')
+    }))
+    assert.deepEqual(
+      centered.centeredLines,
+      ['가운데 갈 문단', '둘째 줄도 가운데'],
+      `문단의 모든 줄이 가운데 정렬되지 않음(첫 줄 누락 회귀): ${JSON.stringify(centered.centeredLines)}`
+    )
+    assert(
+      !centered.otherClasses.includes('cm-align'),
+      `선택하지 않은 문단까지 정렬됨: ${centered.otherClasses}`
+    )
+    console.log('  ✓ 선택 문단만 정렬: <div align="center"> 기록 + 그 문단의 모든 줄이 가운데')
+
+    // 커서를 블록 밖으로 → <div> 태그 줄이 화면에서 사라진다(라이브 프리뷰)
+    await page.locator('.cm-line', { hasText: '끝 문단' }).click()
+    await page.waitForTimeout(300)
+    const visibleText = (await page.textContent('.cm-content')) ?? ''
+    assert(
+      !visibleText.includes('<div') && !visibleText.includes('</div>'),
+      `정렬 태그가 화면에 노출됨: ${visibleText}`
+    )
+    console.log('  ✓ 정렬 태그(<div align>)는 화면에서 숨김 — 원고엔 남아 이식성 유지')
 
     // '자료 반입' 오버레이가 드롭 후 눌어붙지 않는지(사용자 버그 재현·회귀 방지)
     await page.evaluate(() => {
@@ -284,6 +403,29 @@ async function main() {
     await page.waitForSelector('.drop-overlay', { state: 'detached', timeout: 2000 }) // 드롭 후 사라짐
     console.log('  ✓ 자료 반입 오버레이: 파일 드래그 시 표시 → 드롭 후 사라짐(눌어붙음 없음)')
 
+    // ── 섹션 갤러리 — '캐릭터'를 누르면 인물이 카드로 죽 펼쳐지고, 카드를 누르면 그 문서가 열린다 ──
+    await page.click('.binder-section-label:has-text("캐릭터")')
+    await page.waitForSelector('.gallery', { timeout: 5000 })
+    const charCard = page.locator('.gal-card', { hasText: '김철수' })
+    await charCard.waitFor({ timeout: 5000 })
+    // 앞서 붙인 얼굴 이미지(face.png)가 카드 표지로 실제 로드되는지
+    await page.waitForFunction(
+      () => {
+        const img = document.querySelector('.gal-card .gal-cover-img')
+        return !!img && img.complete && img.naturalWidth > 0
+      },
+      undefined,
+      { timeout: 6000 }
+    )
+    console.log('  ✓ 섹션 갤러리: 캐릭터 카드 + 첨부 이미지가 표지로 렌더')
+
+    await charCard.click()
+    await page.waitForSelector('.gallery', { state: 'detached', timeout: 4000 })
+    await page.waitForSelector('.cm-content[contenteditable="true"]', { timeout: 5000 })
+    const sbPath = (await page.textContent('.sb-path')) ?? ''
+    assert(sbPath.includes('김철수'), `갤러리 카드 클릭이 그 문서를 열지 않음: ${sbPath}`)
+    console.log('  ✓ 섹션 갤러리: 카드 클릭 → 해당 문서가 에디터로 열림')
+
     // 집중 모드 — 양쪽 패널 접기(원고만) → 다시 펼치기
     await page.click('.ws-focus')
     await page.waitForSelector('.binder', { state: 'detached', timeout: 3000 })
@@ -295,7 +437,7 @@ async function main() {
     console.log('  ✓ 집중 모드 해제: 패널 복원')
 
     console.log(
-      '\n✅ 에디터 E2E: 24개 검증 통과 (…+ PDF뷰어 + 집중모드 + 앱모드 + 구분선 + 인용문 + 문단정렬)'
+      '\n✅ 에디터 E2E: 32개 검증 통과 (…+ 기본글꼴 + 인용문탈출 + 탭들여쓰기 + 선택문단정렬 + 섹션갤러리)'
     )
   } finally {
     await app.close()

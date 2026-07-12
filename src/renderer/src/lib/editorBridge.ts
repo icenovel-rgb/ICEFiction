@@ -10,6 +10,11 @@ export function setEditorView(v: EditorView | null): void {
   view = v
 }
 
+/** 현재 에디터 뷰(없으면 null) — 보기 패널의 '선택 문단 정렬'처럼 명령을 직접 실행할 때 쓴다. */
+export function getEditorView(): EditorView | null {
+  return view
+}
+
 export function getSelectionText(): string {
   if (!view) return ''
   const { from, to } = view.state.selection.main

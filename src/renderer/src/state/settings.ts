@@ -68,7 +68,7 @@ export const useSettings = create<SettingsState>()(
       binderOpen: true,
       rightOpen: true,
       theme: 'sepia',
-      fontKey: 'myeongjo',
+      fontKey: 'nanumgothic', // 기본 글꼴 = 내장 나눔고딕(어느 PC에서나 동일하게 보인다)
       fontSizePx: 17,
       lineHeight: 1.9,
       textAlign: 'justify', // 소설 기본은 양쪽 정렬(반듯한 판면)
@@ -79,7 +79,20 @@ export const useSettings = create<SettingsState>()(
       setTheme: (t) => set({ theme: t, customBg: null, customText: null }),
       resetColors: () => set({ customBg: null, customText: null })
     }),
-    { name: 'icefiction-settings' }
+    {
+      name: 'icefiction-settings',
+      version: 1,
+      /**
+       * v0 → v1: 기본 글꼴을 '명조(바탕)'에서 **내장 나눔고딕**으로 바꿨다.
+       * 옛 기본값(myeongjo)을 그대로 쓰던 사용자만 옮긴다 — 직접 다른 글꼴을 고른 사람은 건드리지 않는다.
+       * 옛 기본값은 OS에 Noto Serif KR이 없으면 엉뚱한 글꼴로 떨어졌다(내장 글꼴 도입 전 한계).
+       */
+      migrate: (persisted: unknown, version: number) => {
+        const s = (persisted ?? {}) as Partial<SettingsState>
+        if (version < 1 && s.fontKey === 'myeongjo') return { ...s, fontKey: 'nanumgothic' }
+        return s
+      }
+    }
   )
 )
 

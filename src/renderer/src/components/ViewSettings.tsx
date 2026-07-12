@@ -10,14 +10,24 @@ import {
   type TextAlign,
   type ThemeKey
 } from '../state/settings'
+import { getEditorView } from '../lib/editorBridge'
+import { alignSelection } from '../lib/editorCommands'
+import type { BlockAlign } from '../../../shared/align'
 
-/** 문단 정렬 버튼 — 좌/가운데/우/양쪽(§8.1). */
-const ALIGN_OPTIONS: { value: TextAlign; label: string; glyph: string }[] = [
-  { value: 'left', label: '왼쪽', glyph: '⯇' },
-  { value: 'center', label: '가운데', glyph: '≡' },
-  { value: 'right', label: '오른쪽', glyph: '⯈' },
-  { value: 'justify', label: '양쪽', glyph: '☰' }
+/** 문단 정렬 버튼 — 좌/가운데/우/양쪽(§8.1). hint = 선택 문단 정렬 단축키. */
+const ALIGN_OPTIONS: { value: TextAlign; label: string; glyph: string; hint: string }[] = [
+  { value: 'left', label: '왼쪽', glyph: '⯇', hint: 'Ctrl+Shift+L' },
+  { value: 'center', label: '가운데', glyph: '≡', hint: 'Ctrl+Shift+E' },
+  { value: 'right', label: '오른쪽', glyph: '⯈', hint: 'Ctrl+Shift+R' },
+  { value: 'justify', label: '양쪽', glyph: '☰', hint: 'Ctrl+Shift+J' }
 ]
+
+/** 에디터에서 드래그한 부분에만 정렬을 적용한다(원고 파일에 <div align>으로 기록). */
+function applyAlign(align: BlockAlign | null): void {
+  const view = getEditorView()
+  if (!view) return
+  alignSelection(view, align)
+}
 
 /** 마크다운 문법 치트시트 — 원고는 표준 .md로 저장되므로 어디서든 통하는 문법(§6.1). */
 const MD_ROWS: { code: string; desc: string }[] = [
@@ -30,7 +40,8 @@ const MD_ROWS: { code: string; desc: string }[] = [
   { code: '![](경로)', desc: '이미지 넣기 (자료를 끌어놓으면 자동 삽입)' },
   { code: '[글자](주소)', desc: '링크' },
   { code: '`코드`', desc: '고정폭 글자' },
-  { code: '---', desc: '가로 구분선' }
+  { code: '---', desc: '가로 구분선' },
+  { code: 'Tab', desc: '들여쓰기 — 전각 공백 한 칸(Shift+Tab으로 제거)' }
 ]
 
 function MarkdownHelp(): React.ReactElement {
@@ -141,8 +152,8 @@ export function ViewSettings(): React.ReactElement {
       </label>
 
       <div className="vs-field">
-        <span>문단 정렬</span>
-        <div className="vs-align">
+        <span>문단 정렬 — 문서 전체 기본값</span>
+        <div className="vs-align vs-align-doc">
           {ALIGN_OPTIONS.map((o) => (
             <button
               key={o.value}
@@ -155,6 +166,29 @@ export function ViewSettings(): React.ReactElement {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="vs-field">
+        <span>선택한 부분만 정렬 — 드래그로 고른 문단</span>
+        <div className="vs-align vs-align-sel">
+          {ALIGN_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              onClick={() => applyAlign(o.value as BlockAlign)}
+              title={`선택한 문단을 ${o.label} 정렬 (${o.hint})`}
+            >
+              <span className="vs-align-glyph">{o.glyph}</span>
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <button className="vs-reset" onClick={() => applyAlign(null)}>
+          선택 부분 정렬 해제 (Ctrl+Shift+0)
+        </button>
+        <span className="insp-hint">
+          원고에 <code>&lt;div align="…"&gt;</code>로 기록됩니다 — 깃허브·옵시디언 등 다른 앱에서도
+          그대로 정렬돼 보입니다.
+        </span>
       </div>
 
       <div className="vs-field">

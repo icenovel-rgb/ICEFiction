@@ -1,6 +1,6 @@
 {
   "name": "icefiction",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "소설 집필 데스크톱 프로그램 — 로컬 폴더 기반 원고·설정 관리 + AI 어시스턴트",
   "main": "./out/main/index.js",
   "type": "module",
@@ -10,8 +10,9 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "tsx tests/mdembed.test.mts && tsx tests/project.test.mts",
+    "test": "tsx tests/mdembed.test.mts && tsx tests/align.test.mts && tsx tests/project.test.mts",
     "test:md": "tsx tests/mdembed.test.mts",
+    "test:align": "tsx tests/align.test.mts",
     "test:ai": "tsx tests/ai.test.mts",
     "test:e2e": "node tests/editor.e2e.mjs",
     "test:lib:e2e": "node tests/library.e2e.mjs",

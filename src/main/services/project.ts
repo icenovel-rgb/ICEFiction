@@ -201,6 +201,7 @@ export class ProjectService {
     let order: number | undefined
     let synopsis: string | undefined
     let aliases: string[] | undefined
+    let image: string | undefined
     let type = fallback
     try {
       const { frontmatter } = parseDoc(await fs.readFile(abs, 'utf8'))
@@ -210,10 +211,13 @@ export class ProjectService {
       if (frontmatter.synopsis) synopsis = frontmatter.synopsis
       if (frontmatter.aliases && frontmatter.aliases.length > 0) aliases = frontmatter.aliases
       if (frontmatter.type) type = frontmatter.type
+      // 갤러리 표지 = 첨부 이미지의 첫 장(캐릭터 얼굴 레퍼런스 등, §6.10).
+      const first = (frontmatter.images ?? []).find((p) => IMAGE_EXT.has(extname(p).toLowerCase()))
+      if (first) image = first
     } catch {
       // 파싱 실패해도 파일명으로 노드는 만든다(견고성).
     }
-    return { path: relPath, name: title, isDir: false, type, status, order, synopsis, aliases }
+    return { path: relPath, name: title, isDir: false, type, status, order, synopsis, aliases, image }
   }
 
   async readDoc(relPath: string): Promise<DocContent> {

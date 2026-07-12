@@ -49,6 +49,8 @@ export interface TreeNode {
   order?: number
   synopsis?: string // 시놉시스 체인·컨텍스트용(§7.2)
   aliases?: string[] // 캐릭터·설정 별칭 — 컨텍스트 자동 감지용(§7.2)
+  /** 대표 이미지(프론트매터 images의 첫 장, 루트 기준 상대 POSIX) — 섹션 갤러리의 표지로 쓴다. */
+  image?: string
   children?: TreeNode[]
 }
 

@@ -223,11 +223,202 @@ textarea {
   min-height: 0;
 }
 .content {
+  position: relative; /* 섹션 갤러리 오버레이의 기준 */
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--paper-bg);
+}
+
+/* ── 섹션 갤러리(원고/캐릭터/세계관/노트를 카드로) — 에디터 위를 덮는 오버레이 ── */
+.gallery {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.gal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 24px 10px;
+  flex: none;
+}
+.gal-head-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.gal-heading {
+  font-size: 20px;
+  color: var(--text);
+}
+.gal-count {
+  font-size: 12px;
+  color: var(--muted);
+}
+.gal-head-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gal-search {
+  width: 200px;
+  background: var(--input-bg);
+  border: 1px solid var(--btn-border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.gal-search:focus {
+  outline: none;
+  border-color: var(--accent-hi);
+}
+.gal-new {
+  background: var(--accent);
+  border: 1px solid var(--accent-hi);
+  color: #fff;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+.gal-new:hover {
+  background: var(--accent-hi);
+}
+.gal-close {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+}
+.gal-hint {
+  padding: 0 24px 10px;
+  font-size: 12px;
+  color: #6b6f77;
+  flex: none;
+}
+.gal-folders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 24px 12px;
+  flex: none;
+}
+.gal-folder {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 14px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.gal-folder:hover {
+  border-color: var(--accent-hi);
+  color: var(--text);
+}
+.gal-grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 24px 32px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+  align-content: start;
+}
+.gal-blank {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--muted);
+  padding: 60px 20px;
+}
+.gal-card {
+  padding: 0;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0; /* 표지는 각지게(책장과 동일) */
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.12s, transform 0.12s;
+}
+.gal-card:hover {
+  border-color: var(--accent-hi);
+  transform: translateY(-2px);
+  background: var(--panel);
+}
+.gal-cover {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(160deg, #34317a, #201d52);
+  overflow: hidden;
+}
+.gal-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.gal-cover-glyph {
+  font-size: 38px;
+  color: rgba(255, 255, 255, 0.45);
+}
+.gal-status {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+}
+.gal-status.s-draft {
+  background: rgba(107, 114, 128, 0.92);
+}
+.gal-status.s-revising {
+  background: rgba(224, 168, 59, 0.92);
+  color: #241a04;
+}
+.gal-status.s-done {
+  background: rgba(47, 133, 90, 0.92);
+}
+.gal-meta {
+  padding: 9px 10px 11px;
+}
+.gal-title {
+  font-weight: 600;
+  color: #eceef2;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gal-synopsis {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.gal-empty-syn {
+  color: #6b6f77;
+  font-style: italic;
+}
+:root[data-app-mode='light'] .gal-title {
+  color: var(--text);
 }
 
 /* ── 바인더 ── */
@@ -267,12 +458,28 @@ textarea {
   justify-content: space-between;
   padding: 6px 10px 4px;
 }
+/* 섹션 이름 = 갤러리 열기 버튼(§6.2) */
 .binder-section-label {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1px;
   color: var(--muted);
   text-transform: uppercase;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.binder-section-label:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+.binder-section-label.active {
+  color: var(--accent-hi);
+}
+:root[data-app-mode='light'] .binder-section-label:hover {
+  background: rgba(0, 0, 0, 0.06);
 }
 .binder-section-tools {
   display: flex;
@@ -1774,6 +1981,8 @@ textarea {
  * data-paper-dark는 applySettings가 실제 종이 배경의 명도로 판정해 붙인다. */
 .cm-editor {
   --md-muted: color-mix(in srgb, var(--paper-text, #dddddd) 55%, transparent);
+  /* 인용문 글자 — 좌측 바가 이미 '인용'을 알려주므로 글자는 본문만큼 진하게(안 그러면 안 읽힌다). */
+  --md-quote: color-mix(in srgb, var(--paper-text, #dddddd) 92%, transparent);
   --md-link: #5b54d6; /* 밝은 종이: 진한 인디고 */
   --md-code-bg: color-mix(in srgb, var(--paper-text, #dddddd) 12%, transparent);
 }

@@ -131,8 +131,11 @@ function Row({ node, depth }: { node: TreeNode; depth: number }): React.ReactEle
 function SectionHeader({ node }: { node: TreeNode }): React.ReactElement {
   const createDoc = useStore((s) => s.createDoc)
   const createFolder = useStore((s) => s.createFolder)
+  const openGallery = useStore((s) => s.openGallery)
+  const galleryPath = useStore((s) => s.galleryPath)
   const label = SECTION_LABEL[node.path] ?? node.name
   const folderLabel = node.path === 'manuscript' ? '부' : '카테고리'
+  const isOpen = galleryPath === node.path
 
   async function onAddDoc(e: React.MouseEvent): Promise<void> {
     e.stopPropagation()
@@ -157,7 +160,14 @@ function SectionHeader({ node }: { node: TreeNode }): React.ReactElement {
 
   return (
     <div className="binder-section">
-      <span className="binder-section-label">{label}</span>
+      {/* 섹션 이름을 누르면 그 안의 문서가 카드로 죽 펼쳐진다(섹션 갤러리 §6.2). */}
+      <button
+        className={`binder-section-label${isOpen ? ' active' : ''}`}
+        onClick={() => openGallery(node.path)}
+        title={`${label} 전체를 카드로 보기`}
+      >
+        {label}
+      </button>
       <div className="binder-section-tools">
         <button className="binder-add" onClick={onAddFolder} title={`${folderLabel} 추가`}>
           🗀

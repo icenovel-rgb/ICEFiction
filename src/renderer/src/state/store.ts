@@ -25,6 +25,8 @@ interface State {
   tree: TreeNode[]
   assets: AssetItem[]
   activePath: string | null
+  /** 섹션 갤러리로 펼쳐 보는 폴더 경로(예: 'characters'). null이면 에디터를 본다(§6.2). */
+  galleryPath: string | null
   frontmatter: Frontmatter
   body: string
   dirty: boolean
@@ -44,6 +46,8 @@ interface State {
   closeBook: () => Promise<void>
 
   selectDoc: (path: string) => Promise<void>
+  openGallery: (path: string) => void
+  closeGallery: () => void
   setBody: (body: string) => void
   setFrontmatter: (patch: Partial<Frontmatter>) => void
   saveNow: () => Promise<void>
@@ -66,6 +70,7 @@ const CLEARED = {
   tree: [],
   assets: [],
   activePath: null,
+  galleryPath: null,
   body: '',
   frontmatter: {},
   dirty: false
@@ -83,6 +88,7 @@ export const useStore = create<State>((set, get) => {
       tree: summary.tree,
       assets: [],
       activePath: null,
+      galleryPath: 'manuscript', // 책을 열면 원고 갤러리부터 — 빈 에디터 대신 챕터가 한눈에
       body: '',
       frontmatter: {},
       dirty: false
@@ -97,6 +103,7 @@ export const useStore = create<State>((set, get) => {
     tree: [],
     assets: [],
     activePath: null,
+    galleryPath: null,
     frontmatter: {},
     body: '',
     dirty: false,
@@ -173,11 +180,20 @@ export const useStore = create<State>((set, get) => {
       const doc: DocContent = await window.api.readDoc(path)
       set({
         activePath: doc.path,
+        galleryPath: null, // 문서를 고르면 갤러리는 닫고 에디터로
         frontmatter: doc.frontmatter,
         body: doc.body,
         dirty: false,
         sessionStartChars: Array.from(doc.body).length
       })
+    },
+
+    openGallery(path) {
+      set({ galleryPath: path })
+    },
+
+    closeGallery() {
+      set({ galleryPath: null })
     },
 
     setBody(body) {
