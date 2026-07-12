@@ -7,16 +7,15 @@
  * ICEWriter cli_text.py 노하우: 프롬프트는 argv가 아니라 stdin(Windows 8191자 제한·특수문자 회피),
  * 유휴/하드 타임아웃, 취소 시 프로세스 트리 종료, Windows 콘솔창 숨김, macOS GUI PATH 보강.
  */
-import { spawn, type ChildProcess } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
-import { existsSync, promises as fsp } from 'node:fs'
+import { promises as fsp } from 'node:fs'
 import { join } from 'node:path'
 import type { AIConnStatus, ChatMessage } from '../../shared/types'
 import type { TextAI } from './adapter'
 import { attachmentsToText } from './attachments'
 import { AIError, classifyError } from './errors'
+import { probeVersion, runProc } from './proc'
 
-const IS_WIN = process.platform === 'win32'
 const IDLE_MS = 300_000
 const HARD_MS = 1_800_000
 
@@ -26,34 +25,6 @@ function flavorOf(command: string): Flavor {
   if (b.includes('codex')) return 'codex'
   if (b.includes('claude')) return 'claude'
   return 'generic'
-}
-
-/** macOS GUI 실행 시 최소 PATH 보강(설치 위치 폴백). Windows는 무영향. */
-function augmentedEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env }
-  if (!IS_WIN) {
-    const home = homedir()
-    const extra = [
-      `${home}/.npm-global/bin`,
-      '/opt/homebrew/bin',
-      '/usr/local/bin',
-      `${home}/.local/bin`,
-      `${home}/.bun/bin`,
-      `${home}/.deno/bin`
-    ].filter((p) => existsSync(p))
-    const cur = (env.PATH || '').split(':')
-    env.PATH = [...cur, ...extra.filter((p) => !cur.includes(p))].join(':')
-  }
-  return env
-}
-
-function killTree(proc: ChildProcess | null): void {
-  if (!proc || proc.exitCode !== null || proc.pid == null) return
-  if (IS_WIN) {
-    spawn('taskkill', ['/F', '/T', '/PID', String(proc.pid)], { windowsHide: true })
-  } else {
-    proc.kill('SIGTERM')
-  }
 }
 
 function flattenPrompt(messages: ChatMessage[]): string {
@@ -116,77 +87,18 @@ export class CliAI implements TextAI {
           : `${command} CLI`
   }
 
-  private spawnCli(args: string[]): ChildProcess {
-    const env = augmentedEnv()
-    // cwd=tmp — 자식이 프로젝트/설치 폴더를 잠그거나 그 폴더 컨텍스트를 끌어오는 걸 피한다.
-    const opts = { windowsHide: true, env, cwd: tmpdir() }
-    if (IS_WIN) {
-      return spawn('cmd.exe', ['/c', this.command, ...args], opts)
-    }
-    return spawn(this.command, args, opts)
-  }
-
-  /** 공통 실행 — stdin 전달, stdout 라인 콜백, 워치독/취소/트리종료. 종료코드·stderr tail 반환. */
+  /** 공통 실행 — proc.ts의 공용 실행기(워치독·취소·트리종료)를 쓴다. 이미지 생성도 같은 걸 쓴다. */
   private runCli(
     args: string[],
     stdin: string,
     onLine: (line: string) => void,
     signal: AbortSignal
   ): Promise<{ code: number | null; tail: string[] }> {
-    const proc = this.spawnCli(args)
-    const tail: string[] = []
-    let lastActivity = Date.now()
-    return new Promise((resolve, reject) => {
-      const onAbort = (): void => {
-        killTree(proc)
-        reject(new AIError('cancelled', '중지했습니다'))
-      }
-      signal.addEventListener('abort', onAbort, { once: true })
-
-      const started = Date.now()
-      const watchdog = setInterval(() => {
-        const now = Date.now()
-        if (now - started > HARD_MS || now - lastActivity > IDLE_MS) {
-          clearInterval(watchdog)
-          killTree(proc)
-          reject(new AIError('other', `${this.name}이(가) 응답 없이 멈춰 중단했습니다`, tail.join('\n')))
-        }
-      }, 2000)
-      const cleanup = (): void => {
-        clearInterval(watchdog)
-        signal.removeEventListener('abort', onAbort)
-      }
-
-      proc.stdin?.write(stdin)
-      proc.stdin?.end()
-
-      let buf = ''
-      proc.stdout?.setEncoding('utf8')
-      proc.stdout?.on('data', (chunk: string) => {
-        lastActivity = Date.now()
-        buf += chunk
-        let idx: number
-        while ((idx = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, idx)
-          buf = buf.slice(idx + 1)
-          if (line.trim()) onLine(line)
-        }
-      })
-      proc.stderr?.setEncoding('utf8')
-      proc.stderr?.on('data', (c: string) => {
-        lastActivity = Date.now()
-        tail.push(String(c).trim())
-      })
-      proc.on('error', (err) => {
-        cleanup()
-        reject(new AIError(classifyError(err.message), `${this.command} 실행 실패: ${err.message}`, err.message))
-      })
-      proc.on('close', (code) => {
-        cleanup()
-        if (signal.aborted) return
-        if (buf.trim()) onLine(buf)
-        resolve({ code, tail })
-      })
+    return runProc(this.name, this.command, args, signal, {
+      idleMs: IDLE_MS,
+      hardMs: HARD_MS,
+      stdin,
+      onLine
     })
   }
 
@@ -307,24 +219,10 @@ export class CliAI implements TextAI {
   }
 
   async checkConnection(): Promise<AIConnStatus> {
-    return await new Promise<AIConnStatus>((resolve) => {
-      let proc: ChildProcess
-      try {
-        proc = this.spawnCli(['--version'])
-      } catch {
-        resolve({ ok: false, state: 'missing', detail: `${this.command} 실행 불가` })
-        return
-      }
-      let out = ''
-      proc.stdout?.on('data', (c) => (out += String(c)))
-      proc.on('error', () =>
-        resolve({ ok: false, state: 'missing', detail: `${this.command} CLI를 찾을 수 없습니다` })
-      )
-      proc.on('close', (code) => {
-        if (code === 0) resolve({ ok: true, state: 'ok', detail: `${this.name} 확인 (${out.trim().slice(0, 40)})` })
-        else resolve({ ok: false, state: 'missing', detail: `${this.command} 확인 실패` })
-      })
-    })
+    const { ok, detail } = await probeVersion(this.command)
+    return ok
+      ? { ok: true, state: 'ok', detail: `${this.name} 확인 (${detail.slice(0, 40)})` }
+      : { ok: false, state: 'missing', detail: `${this.command} CLI를 찾을 수 없습니다 — ${detail}` }
   }
 }
 

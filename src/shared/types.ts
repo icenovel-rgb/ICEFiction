@@ -63,8 +63,12 @@ export interface ProjectManifest {
   sections?: string[]
   /** 표지 이미지 파일명(책 폴더 루트 기준, 예: 'cover.png'). 없으면 기본 표지. 폴더와 함께 이동(§6.11). */
   cover?: string
+  /** AI가 그린 표지 원본 아트(글자 없음, 예: 'cover-art.png'). 제목만 다시 얹을 때 재사용한다. */
+  coverArt?: string
   /** 책장에서의 수동 정렬 순서(작을수록 앞). 없으면 최근 수정순으로 뒤에 붙는다. */
   order?: number
+  /** 이미지 생성 스타일 바이블 — 이 책의 모든 그림이 같은 화풍을 갖게 한다(§7.6). */
+  imageStyle?: string
 }
 
 /** 서재(책장)에 놓인 책 한 권의 요약. id = 서재 안 폴더명. */
@@ -194,6 +198,52 @@ export interface AIContext {
   estTokens: number
 }
 
+// ── 이미지 생성(BLUEPRINT §7.6) ──
+
+/** 이미지 생성 CLI 엔진. 텍스트 AI 설정과 별개다. */
+export type ImageEngine = 'agy' | 'codex' | 'gemini'
+
+export interface ImageEngineInfo {
+  engine: ImageEngine
+  ok: boolean
+  detail: string // 버전 또는 "없음" 사유
+}
+
+/** 그림을 어디에 붙일 것인가. */
+export type ImageTarget =
+  | { kind: 'doc'; path: string } // 문서(캐릭터·장소…) 첨부 이미지 → 프론트매터 images
+  | { kind: 'cover'; bookId: string } // 책 표지 아트(글자 없음) → 제목은 앱이 얹는다
+
+export interface ImageGenRequest {
+  requestId: string
+  target: ImageTarget
+  /** 장면 프롬프트(사용자가 모달에서 확인·수정한 최종본) */
+  prompt: string
+  /** 프로젝트 공통 스타일 바이블 */
+  style?: string
+  size: '1024x1024' | '1024x1536' | '1536x1024'
+  engine: ImageEngine | 'auto'
+}
+
+export interface ImageGenResult {
+  requestId: string
+  /** 문서 이미지: 프로젝트 루트 기준 상대 POSIX. 표지 아트: ice-cover URL로 볼 수 있는 파일명. */
+  path: string
+  /** 표지 아트를 렌더러가 캔버스로 읽을 수 있는 URL(제목 합성용). */
+  url: string
+  engine: ImageEngine
+}
+
+export interface ImageProgress {
+  requestId: string
+  text: string
+}
+export interface ImageErrorEvent {
+  requestId: string
+  message: string
+  detail: string
+}
+
 /** 스트리밍 이벤트 페이로드(preload onAi* → 렌더러). */
 export interface AIDelta {
   requestId: string
@@ -220,8 +270,14 @@ export interface IceApi {
   deleteBook(id: string): Promise<LibraryInfo>
   /** 표지 지정/변경 — 이미지 선택창을 열어 책 폴더로 복사한다. 취소 시 변화 없음. */
   setBookCover(id: string): Promise<LibraryInfo>
+  /** 표지를 이미지 데이터(base64 PNG)로 저장 — 앱이 제목을 얹어 합성한 표지를 넘긴다(§7.6). */
+  setBookCoverData(id: string, base64Png: string): Promise<LibraryInfo>
   /** 표지 제거 — 표지 파일 삭제 + 매니페스트 cover 해제. */
   removeBookCover(id: string): Promise<LibraryInfo>
+  /** 책 정보(제목·스타일 바이블·표지 아트) — 표지 생성 모달이 쓴다. */
+  getBookMeta(id: string): Promise<{ title: string; imageStyle?: string; coverArtUrl?: string }>
+  /** 이 책의 이미지 스타일 바이블 저장. */
+  setBookImageStyle(id: string, style: string): Promise<void>
   /** 책장 수동 정렬 — 넘겨준 id 순서대로 각 책 매니페스트 order를 다시 매긴다. */
   reorderBooks(orderedIds: string[]): Promise<LibraryInfo>
   revealLibrary(): Promise<void>
@@ -265,4 +321,13 @@ export interface IceApi {
   onAiDelta(cb: (d: AIDelta) => void): () => void
   onAiDone(cb: (d: AIDone) => void): () => void
   onAiError(cb: (d: AIErrorEvent) => void): () => void
+  // ── 이미지 생성(§7.6) ──
+  /** 설치된 이미지 CLI 엔진 감지. */
+  imageEngines(): Promise<ImageEngineInfo[]>
+  /** 그림 생성 시작(스트리밍 진행 이벤트). 결과는 onImageDone. */
+  generateImage(req: ImageGenRequest): Promise<void>
+  cancelImage(requestId: string): void
+  onImageProgress(cb: (d: ImageProgress) => void): () => void
+  onImageDone(cb: (d: ImageGenResult) => void): () => void
+  onImageError(cb: (d: ImageErrorEvent) => void): () => void
 }

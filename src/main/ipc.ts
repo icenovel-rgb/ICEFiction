@@ -4,12 +4,14 @@
  * 렌더러는 파일시스템에 직접 접근하지 않는다(contextIsolation). 모든 IO는 여기를 거친다 —
  * 보안 + Mac 이식성(BLUEPRINT §5). 서재/책장은 LibraryService, 열린 책은 ProjectService.
  */
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { basename } from 'node:path'
+import { BrowserWindow, dialog, ipcMain, shell, type WebContents } from 'electron'
+import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { AIConfig, ChatMessage, DocType, SaveDocRequest } from '../shared/types'
+import type { AIConfig, ChatMessage, DocType, ImageGenRequest, SaveDocRequest } from '../shared/types'
+import { AIError } from './ai/errors'
+import { imageService } from './ai/image'
 import { aiService } from './services/ai'
-import { libraryService } from './services/library'
+import { COVER_ART, libraryService } from './services/library'
 import { projectService } from './services/project'
 
 export function registerIpc(): void {
@@ -50,8 +52,18 @@ export function registerIpc(): void {
     return libraryService.setBookCover(id, res.filePaths[0])
   })
 
+  ipcMain.handle('library:setCoverData', async (_e, id: string, base64Png: string) =>
+    libraryService.setBookCoverData(id, base64Png)
+  )
+
   ipcMain.handle('library:removeCover', async (_e, id: string) =>
     libraryService.removeBookCover(id)
+  )
+
+  ipcMain.handle('library:bookMeta', async (_e, id: string) => libraryService.bookMeta(id))
+
+  ipcMain.handle('library:setImageStyle', async (_e, id: string, style: string) =>
+    libraryService.setBookImageStyle(id, style)
   )
 
   ipcMain.handle('library:reorder', async (_e, orderedIds: string[]) =>
@@ -160,4 +172,90 @@ export function registerIpc(): void {
     void aiService.generate(requestId, messages, e.sender)
   })
   ipcMain.on('ai:cancel', (_e, requestId: string) => aiService.cancel(requestId))
+
+  // ── 이미지 생성(§7.6) ──
+  ipcMain.handle('image:engines', async () => imageService.engines())
+
+  ipcMain.handle('image:generate', async (e, req: ImageGenRequest) => {
+    // 스트리밍(진행 로그)은 이벤트로 흘리고 handle은 즉시 반환한다.
+    void runImageGeneration(req, e.sender)
+  })
+
+  ipcMain.on('image:cancel', (_e, requestId: string) => {
+    imageJobs.get(requestId)?.abort()
+    imageJobs.delete(requestId)
+  })
+}
+
+/** 진행 중인 이미지 생성 작업(취소용). */
+const imageJobs = new Map<string, AbortController>()
+
+/**
+ * 이미지 생성 실행 — 대상(문서/표지)에 따라 저장 위치를 정하고, 끝나면 결과를 렌더러로 보낸다.
+ *  · 문서: <프로젝트>/assets/images/<문서명>.png → 프론트매터 images에 붙일 수 있게 상대경로 반환
+ *  · 표지: <책폴더>/cover-art.png (글자 없는 원본 아트) → 렌더러가 제목을 얹어 cover.png로 저장
+ */
+async function runImageGeneration(req: ImageGenRequest, sender: WebContents): Promise<void> {
+  const ac = new AbortController()
+  imageJobs.set(req.requestId, ac)
+  const progress = (text: string): void => {
+    if (!sender.isDestroyed()) sender.send('image:progress', { requestId: req.requestId, text })
+  }
+
+  try {
+    let destAbs: string
+    let relOrName: string
+    let url: string
+
+    if (req.target.kind === 'cover') {
+      const folder = await libraryService.bookFolder(req.target.bookId)
+      destAbs = join(folder, COVER_ART)
+      relOrName = COVER_ART
+      url = `ice-cover://art/${encodeURIComponent(req.target.bookId)}`
+    } else {
+      const root = projectService.rootDir
+      if (!root) throw new Error('열린 프로젝트가 없습니다')
+      const stem = sanitizeAssetName(basename(req.target.path, '.md'))
+      const rel = `assets/images/${stem}.png`
+      destAbs = projectService.resolve(rel)
+      relOrName = rel
+      url = '' // 렌더러가 assetUrl(rel)로 만든다
+    }
+
+    const engine = await imageService.generate(
+      {
+        destAbsPath: destAbs,
+        size: req.size,
+        prompt: req.prompt,
+        style: req.style,
+        cover: req.target.kind === 'cover',
+        engine: req.engine
+      },
+      progress,
+      ac.signal
+    )
+
+    if (req.target.kind === 'cover') {
+      await libraryService.noteCoverArt(req.target.bookId)
+      url = `${url}?v=${Date.now()}` // 캐시버스트 — 다시 그리면 새 그림이 보여야 한다
+    }
+
+    if (!sender.isDestroyed()) {
+      sender.send('image:done', { requestId: req.requestId, path: relOrName, url, engine })
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const detail = err instanceof AIError ? err.raw : ''
+    if (!sender.isDestroyed()) {
+      sender.send('image:error', { requestId: req.requestId, message, detail })
+    }
+  } finally {
+    imageJobs.delete(req.requestId)
+  }
+}
+
+/** 자료 파일명 안전화(경로 주입 방지). */
+function sanitizeAssetName(name: string): string {
+  const base = basename(name).replace(/[\\/:*?"<>|]/g, '_').trim()
+  return base || 'image'
 }

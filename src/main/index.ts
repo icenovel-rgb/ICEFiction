@@ -22,7 +22,17 @@ protocol.registerSchemesAsPrivileged([
   },
   {
     scheme: 'ice-cover',
-    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
+    // corsEnabled가 **반드시** 필요하다. 표지 아트를 <canvas>에 그려 toDataURL()로 내보내려면
+    // crossOrigin='anonymous'로 받아야 캔버스가 오염되지 않는데, 커스텀 스킴은 기본적으로 CORS
+    // 대상이 아니어서 이 권한이 없으면 "Cross origin requests are only supported for protocol
+    // schemes: http, https, data…"로 **이미지 로드 자체가 깨진다**(실측).
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true
+    }
   }
 ])
 
@@ -75,15 +85,26 @@ app.whenReady().then(() => {
     }
   })
 
-  // ice-cover://book/<id>?v=<mtime> → 서재 안 그 책의 표지 파일을 스트림(열린 책 여부 무관).
+  // ice-cover://book/<id> → 완성된 표지(제목 포함), ice-cover://art/<id> → AI가 그린 원본 아트(글자 없음).
+  // 열린 책이 없어도 서재 화면에서 서빙된다. ?v=<mtime>은 캐시버스트.
   protocol.handle('ice-cover', async (request) => {
     try {
       const url = new URL(request.url)
-      if (url.host !== 'book') return new Response('bad request', { status: 400 })
+      if (url.host !== 'book' && url.host !== 'art') {
+        return new Response('bad request', { status: 400 })
+      }
       const id = decodeURIComponent(url.pathname).replace(/^\/+/, '')
-      const abs = await libraryService.coverAbsPath(id)
-      if (!abs) return new Response('no cover', { status: 404 })
-      return await net.fetch(pathToFileURL(abs).toString())
+      const abs =
+        url.host === 'art'
+          ? await libraryService.coverArtAbsPath(id)
+          : await libraryService.coverAbsPath(id)
+      if (!abs) return new Response('not found', { status: 404 })
+      const res = await net.fetch(pathToFileURL(abs).toString())
+      // CORS 허용이 **필수**다. 표지 아트를 <canvas>에 그린 뒤 toDataURL()로 내보내는데,
+      // 헤더가 없으면 캔버스가 오염(tainted)돼 SecurityError로 저장이 통째로 막힌다(§7.6).
+      const headers = new Headers(res.headers)
+      headers.set('access-control-allow-origin', '*')
+      return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
     } catch {
       return new Response('bad request', { status: 400 })
     }

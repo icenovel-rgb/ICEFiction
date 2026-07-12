@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react'
 import type { BookSummary } from '../../../shared/types'
 import { useStore } from '../state/store'
 import { openConfirm, openPrompt } from '../ui/dialogs'
+import { useImageStudio } from '../ui/imageStudio'
 import iconUrl from '../assets/icon.png'
 
 type SortMode = 'manual' | 'title' | 'recent' | 'oldest'
@@ -54,6 +55,7 @@ function BookCard({
   const deleteBook = useStore((s) => s.deleteBook)
   const setBookCover = useStore((s) => s.setBookCover)
   const removeBookCover = useStore((s) => s.removeBookCover)
+  const openStudio = useImageStudio((s) => s.open)
 
   async function onRename(e: React.MouseEvent): Promise<void> {
     e.stopPropagation()
@@ -123,7 +125,16 @@ function BookCard({
         </div>
       </div>
       <div className="book-tools" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onSetCover} title={book.cover ? '표지 변경' : '표지 지정'}>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            openStudio({ kind: 'cover', bookId: book.id })
+          }}
+          title="AI로 표지 만들기 (그림은 AI, 제목은 앱이 얹습니다)"
+        >
+          🎨
+        </button>
+        <button onClick={onSetCover} title={book.cover ? '표지 변경' : '표지 지정(파일)'}>
           🖼
         </button>
         {book.cover && (

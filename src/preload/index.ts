@@ -14,6 +14,11 @@ import type {
   ChatMessage,
   DocContent,
   DocType,
+  ImageEngineInfo,
+  ImageErrorEvent,
+  ImageGenRequest,
+  ImageGenResult,
+  ImageProgress,
   IngestResult,
   LibraryInfo,
   ProjectSummary,
@@ -38,8 +43,16 @@ const api = {
     ipcRenderer.invoke('library:renameBook', id, newTitle),
   deleteBook: (id: string): Promise<LibraryInfo> => ipcRenderer.invoke('library:deleteBook', id),
   setBookCover: (id: string): Promise<LibraryInfo> => ipcRenderer.invoke('library:setCover', id),
+  setBookCoverData: (id: string, base64Png: string): Promise<LibraryInfo> =>
+    ipcRenderer.invoke('library:setCoverData', id, base64Png),
   removeBookCover: (id: string): Promise<LibraryInfo> =>
     ipcRenderer.invoke('library:removeCover', id),
+  getBookMeta: (
+    id: string
+  ): Promise<{ title: string; imageStyle?: string; coverArtUrl?: string }> =>
+    ipcRenderer.invoke('library:bookMeta', id),
+  setBookImageStyle: (id: string, style: string): Promise<void> =>
+    ipcRenderer.invoke('library:setImageStyle', id, style),
   reorderBooks: (orderedIds: string[]): Promise<LibraryInfo> =>
     ipcRenderer.invoke('library:reorder', orderedIds),
   revealLibrary: (): Promise<void> => ipcRenderer.invoke('library:reveal'),
@@ -102,7 +115,17 @@ const api = {
   aiCancel: (requestId: string): void => ipcRenderer.send('ai:cancel', requestId),
   onAiDelta: (cb: (d: AIDelta) => void): (() => void) => subscribe('ai:delta', cb),
   onAiDone: (cb: (d: AIDone) => void): (() => void) => subscribe('ai:done', cb),
-  onAiError: (cb: (d: AIErrorEvent) => void): (() => void) => subscribe('ai:error', cb)
+  onAiError: (cb: (d: AIErrorEvent) => void): (() => void) => subscribe('ai:error', cb),
+
+  // ── 이미지 생성(§7.6) ──
+  imageEngines: (): Promise<ImageEngineInfo[]> => ipcRenderer.invoke('image:engines'),
+  generateImage: (req: ImageGenRequest): Promise<void> =>
+    ipcRenderer.invoke('image:generate', req),
+  cancelImage: (requestId: string): void => ipcRenderer.send('image:cancel', requestId),
+  onImageProgress: (cb: (d: ImageProgress) => void): (() => void) =>
+    subscribe('image:progress', cb),
+  onImageDone: (cb: (d: ImageGenResult) => void): (() => void) => subscribe('image:done', cb),
+  onImageError: (cb: (d: ImageErrorEvent) => void): (() => void) => subscribe('image:error', cb)
 }
 
 contextBridge.exposeInMainWorld('api', api)

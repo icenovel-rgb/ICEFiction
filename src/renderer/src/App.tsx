@@ -10,6 +10,7 @@ import { AssetsPanel } from './components/AssetsPanel'
 import { Binder } from './components/Binder'
 import { DialogHost } from './components/DialogHost'
 import { Editor } from './components/Editor'
+import { ImageStudio } from './components/ImageStudio'
 import { Inspector } from './components/Inspector'
 import { Library } from './components/Library'
 import { Lightbox } from './components/Lightbox'
@@ -74,6 +75,7 @@ export function App(): React.ReactElement {
       {project ? <Workspace /> : <Library />}
       <DialogHost />
       <AssetPicker />
+      <ImageStudio />
       <Lightbox />
       {zoomPct !== null && <div className="zoom-pill">{zoomPct}%</div>}
     </>

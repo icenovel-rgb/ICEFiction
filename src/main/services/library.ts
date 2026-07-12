@@ -15,6 +15,8 @@ import { projectService } from './project'
 
 const MANIFEST = 'icefiction.json'
 const CONFIG = 'config.json'
+/** AI가 그린 표지 원본 아트(글자 없음). 제목만 다시 얹을 때 재사용한다(§7.6). */
+export const COVER_ART = 'cover-art.png'
 /** 표지로 허용하는 이미지 확장자(경로 주입·비이미지 차단). */
 const COVER_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'])
 
@@ -198,13 +200,69 @@ export class LibraryService {
     return this.info()
   }
 
-  /** 표지 제거 — cover.* 파일 삭제 + 매니페스트 cover 해제. */
+  /** 표지를 이미지 데이터(base64 PNG)로 저장 — 앱이 제목을 얹어 합성한 표지를 받는다(§7.6). */
+  async setBookCoverData(id: string, base64Png: string): Promise<LibraryInfo> {
+    const dir = await this.libraryDir()
+    const folder = join(dir, safeName(id))
+    const data = Buffer.from(base64Png.replace(/^data:image\/png;base64,/, ''), 'base64')
+    if (data.length < 100) throw new Error('표지 이미지 데이터가 비어 있습니다')
+    await this.removeCoverFiles(folder)
+    await fs.writeFile(join(folder, 'cover.png'), data)
+    await this.patchManifest(folder, (m) => ({ ...m, cover: 'cover.png' }))
+    return this.info()
+  }
+
+  /** 표지 제거 — cover.* 파일 삭제 + 매니페스트 cover 해제(원본 아트 cover-art.png는 남긴다). */
   async removeBookCover(id: string): Promise<LibraryInfo> {
     const dir = await this.libraryDir()
     const folder = join(dir, safeName(id))
     await this.removeCoverFiles(folder)
     await this.patchManifest(folder, ({ cover: _drop, ...rest }) => rest)
     return this.info()
+  }
+
+  /** 책 폴더 절대경로(표지 아트 생성 위치). */
+  async bookFolder(id: string): Promise<string> {
+    return join(await this.libraryDir(), safeName(id))
+  }
+
+  /** 표지 생성 모달이 쓰는 책 정보 — 제목·스타일 바이블·이미 그려둔 아트. */
+  async bookMeta(id: string): Promise<{ title: string; imageStyle?: string; coverArtUrl?: string }> {
+    const folder = await this.bookFolder(id)
+    const manifest = JSON.parse(
+      await fs.readFile(join(folder, MANIFEST), 'utf8')
+    ) as ProjectManifest
+    let coverArtUrl: string | undefined
+    try {
+      const st = await fs.stat(join(folder, COVER_ART))
+      coverArtUrl = `ice-cover://art/${encodeURIComponent(id)}?v=${Math.floor(st.mtimeMs)}`
+    } catch {
+      /* 아직 아트 없음 */
+    }
+    return { title: manifest.title || id, imageStyle: manifest.imageStyle, coverArtUrl }
+  }
+
+  /** 이 책의 이미지 스타일 바이블 저장(모든 그림의 화풍을 맞춘다). */
+  async setBookImageStyle(id: string, style: string): Promise<void> {
+    const folder = await this.bookFolder(id)
+    await this.patchManifest(folder, (m) => ({ ...m, imageStyle: style || undefined }))
+  }
+
+  /** AI가 그린 표지 아트(글자 없음)를 매니페스트에 기록. */
+  async noteCoverArt(id: string): Promise<void> {
+    const folder = await this.bookFolder(id)
+    await this.patchManifest(folder, (m) => ({ ...m, coverArt: COVER_ART }))
+  }
+
+  /** 표지 아트 파일의 절대경로(ice-cover://art 핸들러용). 없으면 null. */
+  async coverArtAbsPath(id: string): Promise<string | null> {
+    try {
+      const abs = join(await this.bookFolder(id), COVER_ART)
+      await fs.access(abs)
+      return abs
+    } catch {
+      return null
+    }
   }
 
   /** 책장 수동 정렬 — 넘겨준 id 순서대로 각 책 매니페스트 order를 0,1,2…로 다시 매긴다. */
@@ -253,14 +311,33 @@ export class LibraryService {
     }
   }
 
-  /** 책 매니페스트를 읽어 변환 함수를 적용하고 원자적으로 되쓴다. */
+  /**
+   * 책 매니페스트를 읽어 변환 함수를 적용하고 원자적으로 되쓴다.
+   *
+   * **책 폴더별로 직렬화한다.** 이미지 생성 시작 시 "스타일 저장"과 "표지 아트 기록"이 동시에
+   * 같은 매니페스트를 rename하려다 Windows에서 EPERM으로 터졌다(실측). 읽기-수정-쓰기 경합이라
+   * 조용한 데이터 유실도 난다. 큐로 묶어 한 번에 하나만 쓰게 한다.
+   */
+  private manifestQueue = new Map<string, Promise<void>>()
+
   private async patchManifest(
     folder: string,
     fn: (m: ProjectManifest) => ProjectManifest
   ): Promise<void> {
-    const path = join(folder, MANIFEST)
-    const manifest = JSON.parse(await fs.readFile(path, 'utf8')) as ProjectManifest
-    await writeFileAtomic(path, JSON.stringify(fn(manifest), null, 2))
+    const prev = this.manifestQueue.get(folder) ?? Promise.resolve()
+    const next = prev
+      .catch(() => {}) // 앞 작업이 실패해도 큐는 계속 흐른다
+      .then(async () => {
+        const path = join(folder, MANIFEST)
+        const manifest = JSON.parse(await fs.readFile(path, 'utf8')) as ProjectManifest
+        await writeFileAtomic(path, JSON.stringify(fn(manifest), null, 2))
+      })
+    this.manifestQueue.set(folder, next)
+    try {
+      await next
+    } finally {
+      if (this.manifestQueue.get(folder) === next) this.manifestQueue.delete(folder)
+    }
   }
 
   /** 책 삭제 = 서재 안 .trash로 이동(즉시 rmtree 대신 복구 여지, §6.8). */

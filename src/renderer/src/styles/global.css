@@ -1450,6 +1450,171 @@ textarea {
   white-space: nowrap;
 }
 
+/* ── 이미지 스튜디오(AI 그림 생성 + 표지 제목 조판, §7.6) ── */
+.studio {
+  width: 980px;
+  max-width: 94vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+.studio-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.studio-head button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+}
+.studio-body {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  overflow-y: auto;
+}
+.studio-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.studio-right {
+  width: 320px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.studio-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.studio-field textarea,
+.studio-field select,
+.studio-field input {
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+}
+.studio-field input[type='range'] {
+  accent-color: var(--accent-hi);
+}
+.studio-row {
+  display: flex;
+  gap: 8px;
+}
+.studio-row > * {
+  flex: 1;
+  min-width: 0;
+}
+.studio-row select {
+  color: var(--text);
+  font-size: 13px;
+}
+.studio-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.studio-actions .dialog-confirm {
+  padding: 9px 18px;
+}
+.studio-log {
+  flex: 1;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.studio-logline {
+  color: #6b6f77;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-spin {
+  color: var(--accent-hi);
+  margin-right: 6px;
+}
+.studio-warn {
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dirty);
+  background: rgba(224, 168, 59, 0.1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.studio-error {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow-y: auto;
+  color: #e08a8a;
+  background: rgba(182, 35, 36, 0.12);
+  border-radius: 6px;
+}
+.studio-canvas,
+.studio-preview {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: #1c1d20;
+  display: block;
+}
+.studio-blank {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 3 / 4;
+  border: 1px dashed var(--border);
+  color: #6b6f77;
+  font-size: 12px;
+}
+.studio-title-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.studio-title-controls textarea,
+.studio-title-controls select {
+  color: var(--text);
+  font-size: 13px;
+}
+.insp-gen-image {
+  margin-top: 8px;
+  width: 100%;
+  padding: 8px;
+  background: transparent;
+  border: 1px solid var(--accent-hi);
+  color: #cfcbff;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.insp-gen-image:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
 /* ── 라이트박스 ── */
 .lb-backdrop {
   position: fixed;

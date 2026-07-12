@@ -6,6 +6,7 @@ import { useStore } from '../state/store'
 import { assetUrl, baseName, kindOf } from '../lib/media'
 import { useLightbox } from '../ui/lightbox'
 import { pickAsset } from '../ui/picker'
+import { useImageStudio } from '../ui/imageStudio'
 
 const STATUS_OPTIONS: { value: DocStatus; label: string }[] = [
   { value: 'draft', label: '초고' },
@@ -20,6 +21,7 @@ export function Inspector(): React.ReactElement {
   const attachImage = useStore((s) => s.attachImage)
   const detachImage = useStore((s) => s.detachImage)
   const openLightbox = useLightbox((s) => s.open)
+  const openStudio = useImageStudio((s) => s.open)
 
   if (!activePath) {
     return <div className="inspector inspector-empty">선택된 문서 없음</div>
@@ -67,6 +69,14 @@ export function Inspector(): React.ReactElement {
             +
           </button>
         </div>
+        {/* AI가 시트를 읽고 얼굴·삽화를 그린다. 첫 장이 갤러리 표지가 된다(§7.6). */}
+        <button
+          className="insp-gen-image"
+          onClick={() => openStudio({ kind: 'doc', path: activePath! })}
+          title="AI에게 이 문서의 이미지를 그리게 합니다"
+        >
+          🎨 AI로 이미지 생성
+        </button>
       </div>
 
       <label className="insp-field">
