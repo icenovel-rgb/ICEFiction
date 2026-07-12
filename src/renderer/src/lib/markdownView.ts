@@ -5,7 +5,6 @@
  *  · 이미지: ![[경로]] / ![](경로)를 실제 <img>로 인라인 렌더 (커서가 그 줄이면 소스 노출→편집)
  */
 import { syntaxHighlighting, HighlightStyle, syntaxTree } from '@codemirror/language'
-import { RangeSetBuilder } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -122,7 +121,8 @@ function imageDecos(view: EditorView, add: (from: number, to: number, d: Decorat
 }
 
 // ── 기호 숨김(라이브 프리뷰) ──
-const HIDE_MARKS = new Set(['HeaderMark', 'EmphasisMark', 'CodeMark', 'StrikethroughMark'])
+// QuoteMark(>)도 포함 — 커서 없는 줄에선 '>'를 감추고 인용 블록(좌측 바)만 보이게(사용자 지적: 인용문 미작동).
+const HIDE_MARKS = new Set(['HeaderMark', 'EmphasisMark', 'CodeMark', 'StrikethroughMark', 'QuoteMark'])
 const hidden = Decoration.replace({})
 
 function markHideDecos(view: EditorView, add: (from: number, to: number, d: Decoration) => void): void {
@@ -134,27 +134,60 @@ function markHideDecos(view: EditorView, add: (from: number, to: number, d: Deco
       enter: (node) => {
         if (!HIDE_MARKS.has(node.name)) return
         if (selectionTouchesLine(view, node.from)) return // 편집 중인 줄은 기호 노출
-        // HeaderMark 뒤 공백까지 함께 숨겨 제목이 왼쪽에 붙게.
+        // HeaderMark(#)·QuoteMark(>) 뒤 공백까지 함께 숨겨 결과 텍스트가 왼쪽에 붙게.
         let end = node.to
-        if (node.name === 'HeaderMark' && view.state.doc.sliceString(end, end + 1) === ' ') end += 1
+        if (
+          (node.name === 'HeaderMark' || node.name === 'QuoteMark') &&
+          view.state.doc.sliceString(end, end + 1) === ' '
+        ) {
+          end += 1
+        }
         add(node.from, end, hidden)
       }
     })
   }
 }
 
+// ── 인용 블록(Blockquote) 라인 렌더 ── 좌측 바 + 들여쓰기(.cm-blockquote). 커서 여부와 무관하게 표시.
+const quoteLine = Decoration.line({ class: 'cm-blockquote' })
+
+function blockquoteDecos(view: EditorView, addLine: (lineFrom: number) => void): void {
+  const tree = syntaxTree(view.state)
+  const seen = new Set<number>()
+  for (const { from, to } of view.visibleRanges) {
+    tree.iterate({
+      from,
+      to,
+      enter: (node) => {
+        if (node.name !== 'Blockquote') return
+        // 이 인용 블록이 걸친 모든 줄에 라인 데코를 붙인다(중첩 인용은 같은 줄 중복을 seen으로 제거).
+        let pos = node.from
+        for (;;) {
+          const line = view.state.doc.lineAt(pos)
+          if (!seen.has(line.from)) {
+            seen.add(line.from)
+            addLine(line.from)
+          }
+          if (line.to >= node.to) break
+          pos = line.to + 1
+        }
+      }
+    })
+  }
+}
+
 function buildDecorations(view: EditorView): DecorationSet {
-  const marks: { from: number; to: number; d: Decoration }[] = []
+  // 라인 데코(인용 블록)와 인라인 replace 데코(기호 숨김·이미지·구분선)가 섞이므로
+  // 수동 정렬 대신 Decoration.set(ranges, true)에 정렬을 맡긴다(라인/인라인 side 처리까지 정확).
+  const ranges: ReturnType<Decoration['range']>[] = []
   const push = (from: number, to: number, d: Decoration): void => {
-    marks.push({ from, to, d })
+    ranges.push(d.range(from, to))
   }
   markHideDecos(view, push)
   hrDecos(view, push)
   imageDecos(view, push)
-  marks.sort((a, b) => a.from - b.from || a.to - b.to)
-  const builder = new RangeSetBuilder<Decoration>()
-  for (const m of marks) builder.add(m.from, m.to, m.d)
-  return builder.finish()
+  blockquoteDecos(view, (lineFrom) => ranges.push(quoteLine.range(lineFrom)))
+  return Decoration.set(ranges, true)
 }
 
 const livePreview = ViewPlugin.fromClass(
@@ -177,5 +210,15 @@ const livePreview = ViewPlugin.fromClass(
   }
 )
 
-/** Editor에 추가할 마크다운 라이브 프리뷰 확장(스타일 + 기호 숨김 + 인라인 이미지). */
-export const markdownExtras = [syntaxHighlighting(markdownHighlight), livePreview]
+// 인용 블록 좌측 바·들여쓰기 — `.cm-line.cm-blockquote`(2클래스)로 paperTheme의 `.cm-line{padding:0}`을
+// 특이도로 이겨 들여쓰기가 확실히 먹게 한다. 색은 종이색(--paper-text)에서 파생해 어느 테마에서도 대비 유지.
+const quoteTheme = EditorView.theme({
+  '.cm-line.cm-blockquote': {
+    borderLeft: '3px solid color-mix(in srgb, var(--paper-text) 30%, transparent)',
+    paddingLeft: '14px',
+    background: 'color-mix(in srgb, var(--paper-text) 4%, transparent)'
+  }
+})
+
+/** Editor에 추가할 마크다운 라이브 프리뷰 확장(스타일 + 기호 숨김 + 인라인 이미지 + 인용 블록). */
+export const markdownExtras = [syntaxHighlighting(markdownHighlight), livePreview, quoteTheme]

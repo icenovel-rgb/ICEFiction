@@ -2,7 +2,22 @@
  * 보기·집필 환경 설정 패널 — 줄번호/테마/글꼴/글자크기/줄간격/색(BLUEPRINT §8.1).
  * 값은 useSettings(localStorage)에 저장되고 applySettings로 CSS 변수에 즉시 반영된다.
  */
-import { effectiveColors, FONTS, THEMES, useSettings, type ThemeKey } from '../state/settings'
+import {
+  effectiveColors,
+  FONTS,
+  THEMES,
+  useSettings,
+  type TextAlign,
+  type ThemeKey
+} from '../state/settings'
+
+/** 문단 정렬 버튼 — 좌/가운데/우/양쪽(§8.1). */
+const ALIGN_OPTIONS: { value: TextAlign; label: string; glyph: string }[] = [
+  { value: 'left', label: '왼쪽', glyph: '⯇' },
+  { value: 'center', label: '가운데', glyph: '≡' },
+  { value: 'right', label: '오른쪽', glyph: '⯈' },
+  { value: 'justify', label: '양쪽', glyph: '☰' }
+]
 
 /** 마크다운 문법 치트시트 — 원고는 표준 .md로 저장되므로 어디서든 통하는 문법(§6.1). */
 const MD_ROWS: { code: string; desc: string }[] = [
@@ -124,6 +139,23 @@ export function ViewSettings(): React.ReactElement {
           onChange={(e) => s.patch({ lineHeight: Number(e.target.value) })}
         />
       </label>
+
+      <div className="vs-field">
+        <span>문단 정렬</span>
+        <div className="vs-align">
+          {ALIGN_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              className={s.textAlign === o.value ? 'active' : ''}
+              onClick={() => s.patch({ textAlign: o.value })}
+              title={o.label}
+            >
+              <span className="vs-align-glyph">{o.glyph}</span>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="vs-field">
         <span>색 직접 고르기</span>

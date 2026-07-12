@@ -59,6 +59,10 @@ export interface ProjectManifest {
   createdAt: string
   /** 최상위 섹션 표시 순서. */
   sections?: string[]
+  /** 표지 이미지 파일명(책 폴더 루트 기준, 예: 'cover.png'). 없으면 기본 표지. 폴더와 함께 이동(§6.11). */
+  cover?: string
+  /** 책장에서의 수동 정렬 순서(작을수록 앞). 없으면 최근 수정순으로 뒤에 붙는다. */
+  order?: number
 }
 
 /** 서재(책장)에 놓인 책 한 권의 요약. id = 서재 안 폴더명. */
@@ -67,6 +71,10 @@ export interface BookSummary {
   title: string
   updatedAt: string // ISO — 마지막 수정 시각(정렬용)
   chapterCount: number
+  /** 표지가 있으면 바로 쓸 수 있는 ice-cover:// URL(캐시버스트 포함). 없으면 undefined → 기본 표지. */
+  cover?: string
+  /** 수동 정렬 순서(매니페스트 order). 렌더러 드래그 재정렬 표시용. */
+  order?: number
 }
 
 /** 서재 = 모든 책을 담는 단일 보관 경로 + 그 안 책 목록(BLUEPRINT §0.2·ICEWriter 방식). */
@@ -208,6 +216,12 @@ export interface IceApi {
   openBook(id: string): Promise<ProjectSummary>
   renameBook(id: string, newTitle: string): Promise<LibraryInfo>
   deleteBook(id: string): Promise<LibraryInfo>
+  /** 표지 지정/변경 — 이미지 선택창을 열어 책 폴더로 복사한다. 취소 시 변화 없음. */
+  setBookCover(id: string): Promise<LibraryInfo>
+  /** 표지 제거 — 표지 파일 삭제 + 매니페스트 cover 해제. */
+  removeBookCover(id: string): Promise<LibraryInfo>
+  /** 책장 수동 정렬 — 넘겨준 id 순서대로 각 책 매니페스트 order를 다시 매긴다. */
+  reorderBooks(orderedIds: string[]): Promise<LibraryInfo>
   revealLibrary(): Promise<void>
   // ── 열린 책 ──
   refreshTree(): Promise<TreeNode[]>

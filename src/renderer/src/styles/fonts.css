@@ -1,0 +1,72 @@
+/*
+ * 내장 글꼴 @font-face (BLUEPRINT §8.1) — PC에 폰트가 없어도 원고가 같은 모양으로 보이게
+ * 실제 woff2 파일을 앱에 번들한다. Vite가 url()을 해시 자산으로 옮겨 out/renderer/에 포함.
+ * 라이선스는 assets/fonts/LICENSES.md 참조(나눔=OFL, KoPubWorld=한국출판인회의 무료 임베드).
+ *
+ * regular=400, bold=700만 내장한다. 그 외 굵기는 브라우저 합성. font-display: swap으로
+ * 로딩 중에도 대체 글꼴로 즉시 표시(FOIT 방지).
+ */
+
+/* ── 나눔명조 (NanumMyeongjo) — OFL ── */
+@font-face {
+  font-family: 'NanumMyeongjo';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/NanumMyeongjo-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'NanumMyeongjo';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/NanumMyeongjo-Bold.woff2') format('woff2');
+}
+
+/* ── 나눔고딕 (NanumGothic) — OFL ── */
+@font-face {
+  font-family: 'NanumGothic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/NanumGothic-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'NanumGothic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/NanumGothic-Bold.woff2') format('woff2');
+}
+
+/* ── KoPubWorld 바탕 (KoPubWorldBatang) — KoPub 라이선스. Medium을 기본(400)으로 매핑 ── */
+@font-face {
+  font-family: 'KoPubWorldBatang';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/KoPubWorldBatang-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'KoPubWorldBatang';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/KoPubWorldBatang-Bold.woff2') format('woff2');
+}
+
+/* ── KoPubWorld 돋움 (KoPubWorldDotum) — KoPub 라이선스. Medium을 기본(400)으로 매핑 ── */
+@font-face {
+  font-family: 'KoPubWorldDotum';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/KoPubWorldDotum-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'KoPubWorldDotum';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/KoPubWorldDotum-Bold.woff2') format('woff2');
+}

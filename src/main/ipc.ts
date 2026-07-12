@@ -39,6 +39,25 @@ export function registerIpc(): void {
 
   ipcMain.handle('library:deleteBook', async (_e, id: string) => libraryService.deleteBook(id))
 
+  ipcMain.handle('library:setCover', async (_e, id: string) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const res = await dialog.showOpenDialog(win!, {
+      title: '표지 이미지 선택',
+      properties: ['openFile'],
+      filters: [{ name: '이미지', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] }]
+    })
+    if (res.canceled || res.filePaths.length === 0) return libraryService.info()
+    return libraryService.setBookCover(id, res.filePaths[0])
+  })
+
+  ipcMain.handle('library:removeCover', async (_e, id: string) =>
+    libraryService.removeBookCover(id)
+  )
+
+  ipcMain.handle('library:reorder', async (_e, orderedIds: string[]) =>
+    libraryService.reorderBooks(orderedIds)
+  )
+
   ipcMain.handle('library:reveal', async () => {
     await shell.openPath(await libraryService.libraryDir())
   })

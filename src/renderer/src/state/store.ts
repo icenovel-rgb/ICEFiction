@@ -7,6 +7,7 @@
 import { create } from 'zustand'
 import type {
   AssetItem,
+  BookSummary,
   DocContent,
   DocType,
   Frontmatter,
@@ -37,6 +38,9 @@ interface State {
   openBook: (id: string) => Promise<void>
   renameBook: (id: string, title: string) => Promise<void>
   deleteBook: (id: string) => Promise<void>
+  setBookCover: (id: string) => Promise<void>
+  removeBookCover: (id: string) => Promise<void>
+  reorderBooks: (orderedIds: string[]) => Promise<void>
   closeBook: () => Promise<void>
 
   selectDoc: (path: string) => Promise<void>
@@ -131,6 +135,30 @@ export const useStore = create<State>((set, get) => {
 
     async deleteBook(id) {
       const library = await window.api.deleteBook(id)
+      set({ library })
+    },
+
+    async setBookCover(id) {
+      const library = await window.api.setBookCover(id)
+      set({ library })
+    },
+
+    async removeBookCover(id) {
+      const library = await window.api.removeBookCover(id)
+      set({ library })
+    },
+
+    async reorderBooks(orderedIds) {
+      // 드래그 결과를 즉시 반영(낙관적)한 뒤, 서버 정렬 결과로 확정한다.
+      const cur = get().library
+      if (cur) {
+        const byId = new Map(cur.books.map((b) => [b.id, b]))
+        const reordered = orderedIds
+          .map((id) => byId.get(id))
+          .filter((b): b is BookSummary => !!b)
+        set({ library: { ...cur, books: reordered } })
+      }
+      const library = await window.api.reorderBooks(orderedIds)
       set({ library })
     },
 

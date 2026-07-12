@@ -18,17 +18,26 @@ export const THEMES: Record<ThemeKey, { label: string; bg: string; text: string 
   white: { label: '화이트', bg: '#ffffff', text: '#1a1a1a' }
 }
 
+/**
+ * 글꼴 목록. 내장(번들) 글꼴은 label에 ✓ 표시 — PC에 설치돼 있지 않아도 앱이 파일을 품고 있어
+ * 어디서나 같은 모양으로 보인다(fonts.css @font-face). 나머지는 OS 설치 글꼴에 의존한다.
+ */
 export const FONTS: { key: string; label: string; stack: string }[] = [
+  { key: 'nanummyeongjo', label: '나눔명조 ✓', stack: "'NanumMyeongjo', 'Batang', serif" },
+  { key: 'kopubbatang', label: 'KoPub 바탕 ✓', stack: "'KoPubWorldBatang', 'Batang', serif" },
+  { key: 'nanumgothic', label: '나눔고딕 ✓', stack: "'NanumGothic', 'Malgun Gothic', sans-serif" },
+  { key: 'kopubdotum', label: 'KoPub 돋움 ✓', stack: "'KoPubWorldDotum', 'Malgun Gothic', sans-serif" },
   { key: 'myeongjo', label: '명조(바탕)', stack: "'Noto Serif KR', 'Batang', serif" },
-  { key: 'nanummyeongjo', label: '나눔명조', stack: "'NanumMyeongjo', 'Batang', serif" },
   { key: 'malgun', label: '맑은 고딕', stack: "'Malgun Gothic', 'Segoe UI', sans-serif" },
-  { key: 'nanumgothic', label: '나눔고딕', stack: "'NanumGothic', 'Malgun Gothic', sans-serif" },
   { key: 'gulim', label: '굴림', stack: "'Gulim', sans-serif" }
 ]
 
 export function fontStack(key: string): string {
   return (FONTS.find((f) => f.key === key) ?? FONTS[0]).stack
 }
+
+/** 문단 정렬 — 원고 본문 text-align(§8.1). 기본은 양쪽 정렬(justify). */
+export type TextAlign = 'left' | 'center' | 'right' | 'justify'
 
 interface SettingsState {
   showLineNumbers: boolean
@@ -40,6 +49,8 @@ interface SettingsState {
   fontKey: string
   fontSizePx: number
   lineHeight: number
+  /** 원고 문단 정렬(좌/가운데/우/양쪽). 기본 양쪽 정렬. */
+  textAlign: TextAlign
   /** 사용자가 직접 고른 색(있으면 프리셋 색을 덮음). 프리셋 바꾸면 초기화. */
   customBg: string | null
   customText: string | null
@@ -60,6 +71,7 @@ export const useSettings = create<SettingsState>()(
       fontKey: 'myeongjo',
       fontSizePx: 17,
       lineHeight: 1.9,
+      textAlign: 'justify', // 소설 기본은 양쪽 정렬(반듯한 판면)
       customBg: null,
       customText: null,
 
@@ -103,5 +115,6 @@ export function applySettings(s: SettingsState): void {
   root.setProperty('--paper-font', fontStack(s.fontKey))
   root.setProperty('--paper-fontsize', `${s.fontSizePx}px`)
   root.setProperty('--paper-lineheight', String(s.lineHeight))
+  root.setProperty('--paper-align', s.textAlign ?? 'justify')
   root.setProperty('--gutter-display', s.showLineNumbers ? 'flex' : 'none')
 }

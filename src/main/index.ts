@@ -8,14 +8,20 @@ import { app, BrowserWindow, protocol, net } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { registerIpc } from './ipc'
+import { libraryService } from './services/library'
 import { projectService } from './services/project'
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL
 
 // 특권 스킴 등록은 app ready 전에 해야 fetch·<video>·<img>가 정상 동작한다.
+// ice-asset: 열린 책 안의 자료(§6.10). ice-cover: 서재 화면의 책 표지(열린 책이 없어도 서빙).
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'ice-asset',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
+  },
+  {
+    scheme: 'ice-cover',
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
   }
 ])
@@ -64,6 +70,20 @@ app.whenReady().then(() => {
         return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
       }
       return res
+    } catch {
+      return new Response('bad request', { status: 400 })
+    }
+  })
+
+  // ice-cover://book/<id>?v=<mtime> → 서재 안 그 책의 표지 파일을 스트림(열린 책 여부 무관).
+  protocol.handle('ice-cover', async (request) => {
+    try {
+      const url = new URL(request.url)
+      if (url.host !== 'book') return new Response('bad request', { status: 400 })
+      const id = decodeURIComponent(url.pathname).replace(/^\/+/, '')
+      const abs = await libraryService.coverAbsPath(id)
+      if (!abs) return new Response('no cover', { status: 404 })
+      return await net.fetch(pathToFileURL(abs).toString())
     } catch {
       return new Response('bad request', { status: 400 })
     }

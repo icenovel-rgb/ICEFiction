@@ -331,8 +331,46 @@ async function libraryTests(): Promise<void> {
   assert.equal(info.books.length, 0) // 새 서재는 비어 있음
   ok('library: 서재 경로 변경')
 
+  // 7) 수동 정렬(order) — reorderBooks가 매니페스트 order를 매기고 재스캔에도 순서 유지
+  await lib.createBook('가')
+  await lib.createBook('나')
+  await lib.createBook('다')
+  info = await lib.info()
+  assert.equal(info.books.length, 3)
+  const rev = [...info.books.map((b) => b.id)].reverse()
+  info = await lib.reorderBooks(rev)
+  assert.deepEqual(info.books.map((b) => b.id), rev, 'reorder 순서 미반영')
+  const rescanned = await lib.info()
+  assert.deepEqual(rescanned.books.map((b) => b.id), rev, 'order 영속성 실패(재스캔)')
+  ok('library: 드래그 재정렬(order) 영속')
+
+  // 8) 표지 지정 → cover URL 노출 + coverAbsPath 해석 + 실제 파일 존재
+  const coverSrc = join(home, 'sample-cover.png')
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64'
+  )
+  await fs.writeFile(coverSrc, PNG)
+  const firstId = rev[0]
+  info = await lib.setBookCover(firstId, coverSrc)
+  const covered = info.books.find((b) => b.id === firstId)!
+  assert(
+    !!covered.cover && covered.cover.startsWith('ice-cover://book/'),
+    `표지 URL 미노출: ${covered.cover}`
+  )
+  const abs = await lib.coverAbsPath(firstId)
+  assert(!!abs && abs.toLowerCase().endsWith('.png'), `coverAbsPath 실패: ${abs}`)
+  await fs.access(abs!)
+  ok('library: 표지 지정 → URL·경로·파일 반영')
+
+  // 9) 표지 제거 → cover 사라짐 + 파일 삭제
+  info = await lib.removeBookCover(firstId)
+  assert.equal(info.books.find((b) => b.id === firstId)!.cover, undefined, '표지 제거 후에도 노출')
+  assert.equal(await lib.coverAbsPath(firstId), null, '표지 파일이 남아있음')
+  ok('library: 표지 제거 → cover 해제·파일 삭제')
+
   await fs.rm(home, { recursive: true, force: true })
-  console.log(`✅ LibraryService: 6개 검증 통과`)
+  console.log(`✅ LibraryService: 9개 검증 통과`)
 }
 
 main()

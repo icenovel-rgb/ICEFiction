@@ -8,13 +8,20 @@
  * 서재를 클라우드 폴더(MYBOX 등)로 바꾸면 여러 컴퓨터가 같은 서재를 공유한다(이식성 §6.11).
  */
 import { promises as fs } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, extname, join } from 'node:path'
 import type { BookSummary, LibraryInfo, ProjectManifest, ProjectSummary } from '../../shared/types'
 import { writeFileAtomic } from '../lib/atomic'
 import { projectService } from './project'
 
 const MANIFEST = 'icefiction.json'
 const CONFIG = 'config.json'
+/** 표지로 허용하는 이미지 확장자(경로 주입·비이미지 차단). */
+const COVER_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'])
+
+/** 표지 파일이 있으면 바로 쓸 수 있는 ice-cover:// URL(캐시버스트 mtime 포함)을 만든다. */
+function coverUrl(id: string, mtimeMs: number): string {
+  return `ice-cover://book/${encodeURIComponent(id)}?v=${Math.floor(mtimeMs)}`
+}
 
 interface AppConfig {
   libraryDir?: string
@@ -83,7 +90,13 @@ export class LibraryService {
       const summary = await this.readBook(join(dir, name), name)
       if (summary) books.push(summary)
     }
-    books.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    // 수동 정렬(order) 우선 → 나머지는 최근 수정순으로 뒤에. order가 하나도 없으면 기존과 동일(최근순).
+    books.sort((a, b) => {
+      const ao = a.order ?? Number.POSITIVE_INFINITY
+      const bo = b.order ?? Number.POSITIVE_INFINITY
+      if (ao !== bo) return ao - bo
+      return b.updatedAt.localeCompare(a.updatedAt)
+    })
     return books
   }
 
@@ -97,10 +110,30 @@ export class LibraryService {
         id,
         title: manifest.title || id,
         updatedAt: st.mtime.toISOString(),
-        chapterCount: await this.countChapters(join(folder, 'manuscript'))
+        chapterCount: await this.countChapters(join(folder, 'manuscript')),
+        cover: await this.coverUrlFor(folder, id, manifest),
+        order: typeof manifest.order === 'number' ? manifest.order : undefined
       }
     } catch {
       return null // icefiction.json 없는 폴더는 책이 아님 → 무시
+    }
+  }
+
+  /** 매니페스트 cover가 가리키는 파일이 실제로 있으면 ice-cover URL(캐시버스트)로, 없으면 undefined. */
+  private async coverUrlFor(
+    folder: string,
+    id: string,
+    manifest: ProjectManifest
+  ): Promise<string | undefined> {
+    const name = manifest.cover
+    if (!name || basename(name) !== name || !COVER_EXT.has(extname(name).toLowerCase())) {
+      return undefined
+    }
+    try {
+      const st = await fs.stat(join(folder, name))
+      return coverUrl(id, st.mtimeMs)
+    } catch {
+      return undefined // cover 필드는 있으나 파일이 삭제된 경우
     }
   }
 
@@ -150,6 +183,84 @@ export class LibraryService {
       /* 매니페스트 없으면 폴더명만 바뀜 */
     }
     return this.info()
+  }
+
+  /** 표지 지정/변경 — 선택한 이미지(srcAbsPath)를 책 폴더에 cover.<ext>로 복사하고 매니페스트에 기록. */
+  async setBookCover(id: string, srcAbsPath: string): Promise<LibraryInfo> {
+    const ext = extname(srcAbsPath).toLowerCase()
+    if (!COVER_EXT.has(ext)) throw new Error(`표지로 쓸 수 없는 형식입니다: ${ext || '알 수 없음'}`)
+    const dir = await this.libraryDir()
+    const folder = join(dir, safeName(id))
+    await this.removeCoverFiles(folder) // 이전 표지(확장자 다를 수 있음) 정리
+    const filename = `cover${ext}`
+    await fs.copyFile(srcAbsPath, join(folder, filename))
+    await this.patchManifest(folder, (m) => ({ ...m, cover: filename }))
+    return this.info()
+  }
+
+  /** 표지 제거 — cover.* 파일 삭제 + 매니페스트 cover 해제. */
+  async removeBookCover(id: string): Promise<LibraryInfo> {
+    const dir = await this.libraryDir()
+    const folder = join(dir, safeName(id))
+    await this.removeCoverFiles(folder)
+    await this.patchManifest(folder, ({ cover: _drop, ...rest }) => rest)
+    return this.info()
+  }
+
+  /** 책장 수동 정렬 — 넘겨준 id 순서대로 각 책 매니페스트 order를 0,1,2…로 다시 매긴다. */
+  async reorderBooks(orderedIds: string[]): Promise<LibraryInfo> {
+    const dir = await this.libraryDir()
+    for (let i = 0; i < orderedIds.length; i += 1) {
+      const folder = join(dir, safeName(orderedIds[i]))
+      const order = i
+      try {
+        await this.patchManifest(folder, (m) => ({ ...m, order }))
+      } catch {
+        /* 개별 책 갱신 실패는 건너뛴다(견고성) */
+      }
+    }
+    return this.info()
+  }
+
+  /** 표지 파일의 절대경로(ice-cover 프로토콜 핸들러용). 없으면 null. */
+  async coverAbsPath(id: string): Promise<string | null> {
+    try {
+      const dir = await this.libraryDir()
+      const folder = join(dir, safeName(id))
+      const manifest = JSON.parse(await fs.readFile(join(folder, MANIFEST), 'utf8')) as ProjectManifest
+      const name = manifest.cover
+      if (!name || basename(name) !== name || !COVER_EXT.has(extname(name).toLowerCase())) return null
+      const abs = join(folder, name)
+      await fs.access(abs)
+      return abs
+    } catch {
+      return null
+    }
+  }
+
+  /** 책 폴더 안 cover.* 이미지들을 모두 지운다(표지 교체·제거 시). */
+  private async removeCoverFiles(folder: string): Promise<void> {
+    let entries: string[]
+    try {
+      entries = await fs.readdir(folder)
+    } catch {
+      return
+    }
+    for (const name of entries) {
+      if (name.toLowerCase().startsWith('cover.') && COVER_EXT.has(extname(name).toLowerCase())) {
+        await fs.rm(join(folder, name), { force: true })
+      }
+    }
+  }
+
+  /** 책 매니페스트를 읽어 변환 함수를 적용하고 원자적으로 되쓴다. */
+  private async patchManifest(
+    folder: string,
+    fn: (m: ProjectManifest) => ProjectManifest
+  ): Promise<void> {
+    const path = join(folder, MANIFEST)
+    const manifest = JSON.parse(await fs.readFile(path, 'utf8')) as ProjectManifest
+    await writeFileAtomic(path, JSON.stringify(fn(manifest), null, 2))
   }
 
   /** 책 삭제 = 서재 안 .trash로 이동(즉시 rmtree 대신 복구 여지, §6.8). */

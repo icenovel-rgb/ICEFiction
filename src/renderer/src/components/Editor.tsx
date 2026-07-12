@@ -54,6 +54,7 @@ const paperTheme = EditorView.theme({
     margin: '0 auto',
     padding: '0 28px',
     caretColor: 'var(--paper-text)',
+    textAlign: 'var(--paper-align, justify)', // 문단 정렬(보기 설정) — 줄에 상속돼 양쪽/가운데 등 적용
     userSelect: 'text' // body의 user-select:none 상속 차단(입력·선택 보장)
   },
   '.cm-line': { padding: '0' },

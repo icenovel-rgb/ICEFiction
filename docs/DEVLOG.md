@@ -242,3 +242,34 @@ AI에게 읽히고 싶다")을 3단계 계획으로 처리. 전 단계 증거 �
 - 자료 자동 읽기 심화 옵션: 관련도 기반 선별(현재는 최근순 예산), 폴더별 on/off, 임베드된 자료 우선.
 - 윈도우 코드 서명: 지금은 무서명 유지(본인 사용). 외부 배포 시 Certum 개인 인증서 or MS Store.
 - 스캔본 PDF OCR, 위키링크 `[[문서]]` + 백링크, FTS 검색(M2 잔여), 스냅샷/diff(M5).
+
+## 2026-07-12 — 표지 CRUD · 책장 정렬/검색 · 문단 정렬 · 인용문 수정 · 글꼴 내장
+
+사용자 요청 6건을 한 번에 처리(설계 승인 후 구현).
+
+- **작품 표지 CRUD**: 책 폴더 루트에 `cover.<ext>` + 매니페스트 `cover` 필드(폴더와 함께 이동 = 이식성).
+  서재 화면은 열린 책이 없어 `ice-asset://`로 못 띄우므로 **새 특권 스킴 `ice-cover://book/<id>?v=<mtime>`**
+  신설(캐시버스트) — `libraryService.coverAbsPath(id)`로 서재에서 표지 파일 스트림. IPC
+  `library:setCover`(이미지 대화상자 → 복사·이전 표지 정리)·`library:removeCover`. 카드 hover 도구에
+  표지 지정/변경·제거. **CSP `img-src`에 `ice-cover:` 추가**(안 하면 표지 로드 차단 — 실측 후 수정).
+- **책장 순서 드래그 재정렬 + 검색/정렬**: 매니페스트 `order` 필드 + `library:reorder`(id 순서대로
+  order 재부여, 재스캔에도 영속). `scan()` 정렬 = order → 최근순. 렌더러: HTML5 DnD(수동 정렬 모드+검색
+  없음일 때만), 제목 검색창, 정렬 드롭다운(수동/제목/최근/오래된). "날짜 검색"은 최근·오래된 정렬로 갈음.
+- **문단 정렬(보기 탭)**: `settings.textAlign`(좌/가운데/우/양쪽) → CSS 변수 `--paper-align` →
+  에디터 `.cm-content`. **기본 양쪽(justify)**. ViewSettings에 4버튼 세그먼트.
+- **마크다운 인용문 수정**: 원인 = `>`(QuoteMark)가 기호 숨김 대상이 아니고 인용 블록 시각도 없어
+  회색 이탤릭만 됐음. 수정 = QuoteMark를 숨김 세트에 추가(커서 없는 줄에서 `>`+공백 숨김) +
+  `Blockquote` 줄에 `Decoration.line('cm-blockquote')`(좌측 바+들여쓰기, `.cm-line.cm-blockquote`
+  특이도로 `padding:0` 극복). 데코 조립을 `Decoration.set(ranges, true)`로 바꿔 라인/인라인 side 정렬 위임.
+- **글꼴 내장(4종×Regular/Bold, ~12MB)**: 나눔명조·나눔고딕(OFL, google/fonts TTF→fonttools woff2 변환),
+  KoPubWorld 바탕·돋움(KoPub 라이선스, adrinerDP 배포 woff2). `assets/fonts/*.woff2` + `styles/fonts.css`
+  `@font-face`(swap). FONTS 목록에 내장 4종(✓) 노출. Vite가 `out/renderer/assets/`로 번들, `font-src 'self'`.
+  라이선스는 `assets/fonts/LICENSES.md`·`KoPubWorld-LICENSE.md` 동봉.
+- **표지 라운드 제거**: `.book-card` `border-radius: 0`(각진 표지).
+
+### 검증 (증거 기반)
+
+- 타입 0. 유닛 **mdEmbed 7 · ProjectService 21 · Library 9**(표지 지정/제거·재정렬 영속 추가).
+- 편집기 E2E **24**(인용문 블록·> 숨김 + 문단 정렬 기본 양쪽·전환 추가).
+- 책장 E2E **5**(신규 `test:lib:e2e`) — 표지 `ice-cover://` 실제 이미지 로드·기본 표지·검색·재정렬 영속.
+- 내장 글꼴 4종 × Regular/Bold **8개 모두 런타임 로드 확인**(`document.fonts.load`). 빌드 성공(폰트 번들 확인).

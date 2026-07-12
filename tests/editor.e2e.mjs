@@ -243,6 +243,32 @@ async function main() {
     await page.waitForSelector('.cm-hr', { timeout: 4000 })
     console.log('  ✓ 구분선(---) → 실제 가로선 렌더')
 
+    // 마크다운 인용문(>) → 인용 블록(.cm-blockquote) + 커서 없는 줄의 '>' 숨김(사용자 지적: 인용문 미작동)
+    await page.click('.cm-content')
+    await page.keyboard.press('Control+A')
+    await page.keyboard.type('> 인용된 문장\n\n일반 문장') // 커서는 마지막 '일반 문장' 줄(인용 줄에서 벗어남)
+    await page.waitForSelector('.cm-blockquote', { timeout: 4000 })
+    const quoteText = await page.evaluate(() => {
+      const el = document.querySelector('.cm-blockquote')
+      return el ? el.textContent : ''
+    })
+    assert(
+      quoteText.includes('인용된 문장') && !quoteText.includes('>'),
+      `인용문 렌더 실패(블록/기호 숨김): "${quoteText}"`
+    )
+    console.log('  ✓ 마크다운 인용문 → 인용 블록 + > 기호 숨김')
+
+    // 문단 정렬(보기 설정) — 기본 양쪽(justify), 버튼으로 변경 시 CSS 변수(--paper-align) 반영
+    await page.click('.rightpanel-tabs button:has-text("보기")')
+    await page.waitForSelector('.vs-align', { timeout: 4000 })
+    const alignVar = () =>
+      page.evaluate(() => document.documentElement.style.getPropertyValue('--paper-align').trim())
+    assert.equal(await alignVar(), 'justify', `기본 문단 정렬이 양쪽(justify)이 아님: ${await alignVar()}`)
+    await page.click('.vs-align button:has-text("왼쪽")')
+    assert.equal(await alignVar(), 'left', '문단 정렬(왼쪽) 변경이 CSS 변수에 반영 안 됨')
+    await page.click('.vs-align button:has-text("양쪽")') // 원복
+    console.log('  ✓ 문단 정렬: 기본 양쪽 + 좌/양쪽 전환 반영')
+
     // '자료 반입' 오버레이가 드롭 후 눌어붙지 않는지(사용자 버그 재현·회귀 방지)
     await page.evaluate(() => {
       const app = document.querySelector('.app')
@@ -269,7 +295,7 @@ async function main() {
     console.log('  ✓ 집중 모드 해제: 패널 복원')
 
     console.log(
-      '\n✅ 에디터 E2E: 22개 검증 통과 (…+ PDF뷰어 + 집중모드 + 앱모드 + 구분선 + 드롭오버레이)'
+      '\n✅ 에디터 E2E: 24개 검증 통과 (…+ PDF뷰어 + 집중모드 + 앱모드 + 구분선 + 인용문 + 문단정렬)'
     )
   } finally {
     await app.close()

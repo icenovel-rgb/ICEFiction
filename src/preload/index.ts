@@ -37,6 +37,11 @@ const api = {
   renameBook: (id: string, newTitle: string): Promise<LibraryInfo> =>
     ipcRenderer.invoke('library:renameBook', id, newTitle),
   deleteBook: (id: string): Promise<LibraryInfo> => ipcRenderer.invoke('library:deleteBook', id),
+  setBookCover: (id: string): Promise<LibraryInfo> => ipcRenderer.invoke('library:setCover', id),
+  removeBookCover: (id: string): Promise<LibraryInfo> =>
+    ipcRenderer.invoke('library:removeCover', id),
+  reorderBooks: (orderedIds: string[]): Promise<LibraryInfo> =>
+    ipcRenderer.invoke('library:reorder', orderedIds),
   revealLibrary: (): Promise<void> => ipcRenderer.invoke('library:reveal'),
   // ── 열린 책 ──
   refreshTree: (): Promise<TreeNode[]> => ipcRenderer.invoke('project:refreshTree'),
