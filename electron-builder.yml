@@ -14,8 +14,14 @@ mac:
   target: dmg
   icon: build/icon.png
   category: public.app-category.productivity
-  # 무서명(윈도우와 동일 방침) — Apple Developer ID 없이 빌드. 배포 시 서명·공증으로 교체.
-  identity: null
+  # 조건부 서명: 인증서(CSC_LINK)나 키체인 신원이 있으면 서명하고, 없으면 자동으로 건너뛴다.
+  #  · 무서명으로 강제하려면 CSC_IDENTITY_AUTO_DISCOVERY=false (CI의 검증·PR 빌드가 그렇게 한다).
+  #  · 공증(notarize)은 여기서 켜지 않는다 — 릴리스 경로에서 `-c.mac.notarize=true`로만 켠다
+  #    (자격증명 없이 무조건 공증하면 실패하므로).
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   artifactName: ${productName}-${version}.${ext}
 nsis:
   oneClick: false

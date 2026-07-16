@@ -19,7 +19,8 @@
     "test:image:e2e": "node tests/image.e2e.mjs",
     "test:ai:e2e": "node tests/ai.e2e.mjs",
     "dist": "electron-vite build && electron-builder --win --publish never",
-    "dist:mac": "electron-vite build && electron-builder --mac --publish never"
+    "dist:mac": "electron-vite build && electron-builder --mac --publish never",
+    "dist:mac:release": "electron-vite build && electron-builder --mac -c.mac.notarize=true --publish never"
   },
   "dependencies": {
     "@codemirror/commands": "^6.7.1",

@@ -12,7 +12,7 @@ Windows에서는 mac dmg를 만들 수 없다(코드 서명·hdiutil이 macOS �
 | macOS | 12(Monterey) 이상 권장 |
 | Node.js | **20 LTS 이상** (`node -v`) |
 | Git | Xcode Command Line Tools에 포함 — `xcode-select --install` |
-| Apple 개발자 계정 | **불필요** (무서명 빌드 방침, `identity: null`) |
+| Apple 개발자 계정 | 무서명 빌드는 **불필요**. 외부 배포용 서명·공증은 §8 참조 |
 
 내장 글꼴(나눔·KoPubWorld woff2 8개)은 **저장소에 이미 포함**돼 있다. 따로 받을 것 없다.
 
@@ -65,8 +65,8 @@ xattr -cr /Applications/ICEFiction.app
 
 - **방법 C**: 시스템 설정 → 개인정보 보호 및 보안 → 아래 "확인 없이 열기"
 
-> 외부 배포를 하게 되면 Apple Developer ID(연 $99)로 서명 + 공증(notarize)이 필요하다.
-> 현재 방침은 Windows와 동일하게 **무서명 유지**(본인 사용).
+> 외부 배포를 하게 되면 Apple Developer ID(연 $99)로 서명 + 공증(notarize)이 필요하다 —
+> 배선은 이미 돼 있고 **Secrets만 채우면 자동**이다(§8). 기본 방침은 본인 사용 **무서명 유지**.
 
 ## 5. 크로스플랫폼 관련 코드 상태
 
@@ -101,3 +101,64 @@ xattr -cr /Applications/ICEFiction.app
 책 폴더 안에 있으므로 함께 따라간다.
 
 앱 안: **서재 변경** 버튼 → 클라우드 폴더 선택.
+
+## 8. 서명 · 공증 (외부 배포용)
+
+무서명 dmg는 macOS가 "확인되지 않은 개발자"로 막고, 최신 macOS는 공증 없는 앱을 아예 거부한다.
+외부 배포를 하려면 **① Developer ID 서명 + ② 공증(notarize)** 이 필요하다(Apple Developer Program, 연 $99).
+
+### 8.1 최초 1회 준비 (한 번만)
+
+1. **Developer ID Application 인증서** 발급 → 키체인에서 **`.p12`로 내보내기**(비밀번호 지정).
+2. **App Store Connect API 키** 생성(Users and Access → Integrations/Keys, Developer 권한) →
+   **`.p8` 1회 다운로드**. Key ID·Issuer ID도 기록.
+3. 아래 값을 저장소 **Settings → Secrets and variables → Actions**에 등록:
+
+   | Secret | 값 |
+   |---|---|
+   | `MAC_CSC_LINK` | `.p12` 를 base64 인코딩한 문자열 (`base64 -i cert.p12 \| pbcopy`) |
+   | `MAC_CSC_KEY_PASSWORD` | `.p12` 비밀번호 |
+   | `APPLE_API_KEY_BASE64` | `.p8` 를 base64 인코딩한 문자열 (`base64 -i AuthKey_XXX.p8 \| pbcopy`) |
+   | `APPLE_API_KEY_ID` | API 키 ID |
+   | `APPLE_API_ISSUER` | API 이슈어 ID |
+
+> `.p12`·`.p8`·`.cer`은 `.gitignore`로 커밋이 막혀 있다. **절대 저장소에 넣지 말 것** — Secrets에만 둔다.
+
+### 8.2 이후 릴리스 (버전업마다 — 자동)
+
+준비가 끝나면 **버전 숫자만 올리고 태그를 밀면** CI가 알아서 서명·공증까지 한다. 인증서 절차를
+다시 밟지 않는다.
+
+```bash
+# package.json 의 version 을 올린 뒤
+git tag v0.7.2 && git push origin v0.7.2   # → build-mac 이 서명+공증된 dmg 산출
+```
+
+또는 Actions 탭에서 `build-mac` 수동 실행(**Run workflow**)해도 Secrets가 있으면 서명·공증된다.
+PR·검증 빌드는 **항상 무서명**이라 인증서를 쓰지 않는다(빠른 확인).
+
+### 8.3 로컬 Mac에서 서명·공증
+
+```bash
+export CSC_LINK=$(base64 -i cert.p12)      # 또는 .p12 파일 경로
+export CSC_KEY_PASSWORD=...                 # p12 비밀번호
+export APPLE_API_KEY=./AuthKey_XXX.p8
+export APPLE_API_KEY_ID=...
+export APPLE_API_ISSUER=...
+npm run dist:mac:release                    # 서명 + 공증
+```
+
+`npm run dist:mac`(공증 없음)은 키체인에 Developer ID가 있으면 **서명만**, 없으면 무서명으로 나온다.
+
+### 8.4 결과 검증
+
+```bash
+spctl -a -vvv --type exec "release/mac/ICEFiction.app"   # accepted, source=Notarized Developer ID
+xcrun stapler validate "release/ICEFiction-<버전>.dmg"
+```
+
+### 8.5 인증서 갱신은 언제?
+
+- **버전업 때는 아무것도 안 해도 된다** — Secrets가 그대로 재사용된다.
+- Developer ID Application 인증서는 유효기간이 길다(약 5년). 만료되면 그때 §8.1의 1·3만 다시 한다.
+- Apple Developer Program 멤버십(연 $99)이 끊기면 공증이 거부된다 — 갱신 유지 필요.

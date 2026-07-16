@@ -414,3 +414,24 @@ AI에게 읽히고 싶다")을 3단계 계획으로 처리. 전 단계 증거 �
 - `npm run build` 성공 — 메뉴 추가로 main 번들 80.85kB → 81.93kB, 폰트 8개 정상 번들.
 - ⚠️ dmg 실빌드는 macOS 러너/본체 몫(이 저장소 CI에서 확인) — 리눅스 개발 환경에서는 mac 타깃을
   만들 수 없다. 코드·설정·파이프라인까지 완료했고, dmg 산출은 Actions 실행으로 검증한다.
+
+## 2026-07-16 (추가) — mac 서명·공증 조건부 배선
+
+애플 개발자 계정 보유 확정 → 배포용 서명·공증을 **미리 배선**한다. 핵심 방침: **최초 1회 인증서
+준비 뒤엔 버전업마다 절차를 다시 밟지 않는다** — Secrets가 그대로 재사용돼 태그만 밀면 자동 서명·공증.
+
+- `build/entitlements.mac.plist`(신규): Hardened Runtime 권한(JIT·unsigned-exec-memory 등) — 공증 전제.
+  Electron V8 JIT 때문에 이 권한이 없으면 서명·공증한 앱이 실행 즉시 죽는다. 무서명 빌드엔 미사용.
+- `electron-builder.yml`: `identity: null` 제거 → **조건부 서명**(인증서 있으면 서명, 없으면 자동 생략).
+  `hardenedRuntime`·`entitlements`·`gatekeeperAssess:false` 추가. 공증은 yml에서 켜지 않고
+  릴리스 경로의 `-c.mac.notarize=true`로만 켠다(자격증명 없이 무조건 공증하면 실패하므로).
+- `package.json`: `dist:mac:release`(신규) = 서명+공증. 기존 `dist:mac`은 서명만/무서명(공증 없음).
+- `.github/workflows/build-mac.yml`: **조건부** — PR·검증은 항상 무서명, 태그/수동 실행은 Secrets
+  (`MAC_CSC_LINK` 등)가 있으면 서명+공증. API 키(.p8)는 base64 Secret에서 러너 임시경로로 복원.
+- `.gitignore`: `*.p12 *.p8 *.cer` 등 서명 비밀 커밋 차단.
+- `docs/BUILD-MAC.md` §8 신설: 최초 1회 준비(인증서·API 키·Secrets) → 이후 버전업은 태그만.
+
+### 검증
+
+- 타입 **0**, 유닛 **57 전부 통과**, `npm run build` 성공(코드 변경 없음 — 빌드 설정·CI·문서만).
+- ⚠️ 서명·공증 실빌드는 인증서가 든 macOS 러너/본체 몫 — 이 환경에선 불가. 배선·설정·문서까지 완료.
