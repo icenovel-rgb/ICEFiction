@@ -56,6 +56,11 @@ jobs:
       - name: 유닛 테스트
         run: npm test
 
+      # electron-builder는 out/ 번들을 패키징만 한다 — 번들 생성은 electron-vite가 한다.
+      # 이 단계를 빼면 app.asar에 out/main/index.js가 없어 "entry file ... corrupted"로 깨진다.
+      - name: 번들 빌드 (electron-vite)
+        run: npm run build
+
       # ── 릴리스 경로: 서명 + 공증 (태그/수동 실행 + Secrets 존재 시에만) ──
       - name: 공증 API 키 복원
         if: ${{ github.event_name != 'pull_request' && env.HAS_SIGNING == 'true' }}
