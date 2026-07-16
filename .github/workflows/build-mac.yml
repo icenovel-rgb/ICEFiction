@@ -1,0 +1,53 @@
+# macOS dmg 빌드 — 물리 Mac 없이 GitHub macOS 러너에서 무서명 dmg를 뽑는다.
+# electron-builder의 mac 타깃(dmg·hdiutil·icns 생성)은 macOS 전용이라 반드시 macos 러너에서 돈다.
+#
+# 실행: Actions 탭에서 수동(workflow_dispatch), 또는 v* 태그 push 시 자동.
+# 산출물: 각 아키텍처 dmg가 Actions 아티팩트로 올라간다(무서명 — 배포 시 서명·공증 별도).
+name: build-mac
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  dmg:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14 # Apple Silicon
+            arch: arm64
+          - runner: macos-13 # Intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 타입체크
+        run: npm run typecheck
+
+      - name: 유닛 테스트
+        run: npm test
+
+      - name: dmg 빌드 (${{ matrix.arch }})
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish never
+        env:
+          # 무서명 방침(identity: null) — 코드서명·공증을 시도하지 않게 명시.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: dmg 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: ICEFiction-mac-${{ matrix.arch }}
+          path: release/*.dmg
+          if-no-files-found: error

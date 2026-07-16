@@ -1,6 +1,6 @@
 {
   "name": "icefiction",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "소설 집필 데스크톱 프로그램 — 로컬 폴더 기반 원고·설정 관리 + AI 어시스턴트",
   "main": "./out/main/index.js",
   "type": "module",

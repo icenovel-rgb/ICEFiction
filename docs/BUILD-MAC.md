@@ -70,16 +70,31 @@ xattr -cr /Applications/ICEFiction.app
 
 ## 5. 크로스플랫폼 관련 코드 상태
 
-이미 Mac을 고려해 작성돼 있다 — 추가 작업 없음.
+이미 Mac을 고려해 작성돼 있다.
 
 - 경로: 프로젝트 루트 기준 **상대 POSIX 경로**만 렌더러로 오간다(§6.11). 절대경로 금지.
 - 서재 기본 위치: `app.getPath('documents')/ICEFiction` → Mac에서도 자동으로 `~/Documents/ICEFiction`.
 - 설정 파일: `app.getPath('userData')/config.json` → Mac은 `~/Library/Application Support/ICEFiction/`.
 - 앱 수명주기: `window-all-closed`에서 `process.platform !== 'darwin'` 분기 + `activate` 처리 완료.
+- CLI 스폰: Finder 실행 시 GUI 앱은 셸 PATH를 못 물려받으므로 `proc.ts`가 homebrew(`/opt/homebrew/bin`
+  ·`/usr/local/bin`) 등 표준 위치를 PATH에 보강한다 — agy·codex·ollama 감지 실패 방지.
 - 커스텀 스킴(`ice-asset://`, `ice-cover://`): 플랫폼 무관.
 - 아이콘: `build/icon.png` 512×512 → electron-builder가 **icns 자동 생성**.
+- **네이티브 메뉴**(`src/main/menu.ts`, darwin 전용): App·편집·보기·창·도움말. 메뉴를 안 주면 Electron이
+  개발자용 기본 메뉴를 노출하고, 그 기본 메뉴의 줌 role(Cmd+= · Cmd+- · Cmd+0)이 렌더러 자체 줌과
+  겹쳐 **이중 줌**이 난다 — 커스텀 메뉴에서 줌 role을 빼 렌더러만 줌을 다루게 한다. Windows/Linux는 무영향.
 
-## 6. 서재 공유 (Windows ↔ Mac)
+## 6. CI로 dmg 뽑기 (Mac 본체가 없어도 됨)
+
+`.github/workflows/build-mac.yml` — GitHub **macOS 러너**에서 무서명 dmg를 빌드한다.
+
+- 실행: 저장소 **Actions** 탭 → `build-mac` → **Run workflow**(수동), 또는 `v*` 태그 push 시 자동.
+- 산출: `arm64`(Apple Silicon)·`x64`(Intel) dmg가 Actions **아티팩트**로 올라온다.
+- 파이프라인: `npm ci` → `typecheck` → `npm test` → `electron-builder --mac`.
+
+로컬 Mac에서 직접 빌드하려면 아래 §7(구 §6) 그대로 `npm run dist:mac`.
+
+## 7. 서재 공유 (Windows ↔ Mac)
 
 서재 경로를 클라우드 폴더(MYBOX·Dropbox 등)로 지정하면 두 기기가 같은 서재를 본다.
 책 = 폴더이고 원고 = 표준 마크다운이라 그대로 열린다. 표지(`cover.png`)와 정렬 순서(매니페스트 `order`)도
