@@ -10,6 +10,11 @@ on:
   push:
     tags:
       - 'v*'
+  # main 대상 PR에서 mac 빌드가 깨지지 않는지 자동 확인. mac 러너 2대(arm64·x64)를
+  # 매 PR마다 돌리는 게 부담되면 이 블록만 지우면 된다(수동·태그 트리거는 그대로 유지).
+  pull_request:
+    branches:
+      - main
 
 jobs:
   dmg:
