@@ -124,6 +124,12 @@ xattr -cr /Applications/ICEFiction.app
 
 > `.p12`·`.p8`·`.cer`은 `.gitignore`로 커밋이 막혀 있다. **절대 저장소에 넣지 말 것** — Secrets에만 둔다.
 
+**base64 인코딩 헬퍼**: `.p12`와 `.p8`를 만든 뒤 아래 한 줄이면 5개 Secret 값이 복붙용으로 출력된다.
+
+```bash
+tools/mac-secrets-encode.sh 경로/cert.p12 경로/AuthKey_XXXX.p8
+```
+
 ### 8.2 이후 릴리스 (버전업마다 — 자동)
 
 준비가 끝나면 **버전 숫자만 올리고 태그를 밀면** CI가 알아서 서명·공증까지 한다. 인증서 절차를
