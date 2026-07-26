@@ -25,7 +25,7 @@ npm install
 npm run dist:mac
 ```
 
-산출물: `release/ICEFiction-<버전>.dmg` (예: `ICEFiction-0.5.0.dmg`)
+산출물: `release/ICEFiction-<버전>.dmg` (현재 버전이면 `ICEFiction-0.9.0.dmg`)
 
 ### 아키텍처 선택
 
@@ -40,17 +40,26 @@ npx electron-builder --mac --universal --publish never  # 통합(용량 2배)
 
 ## 3. 빌드 전 검증 (권장 — 증거 기반)
 
-빌드가 성공해도 런타임이 깨질 수 있으므로 Mac에서도 한 번 돌린다.
+빌드가 성공해도 런타임이 깨질 수 있으므로 Mac에서도 한 번 돌린다(수치는 2026-07-26 Windows 실측 통과분).
 
 ```bash
-npm run typecheck      # 타입 0 errors
-npm test               # 유닛: mdEmbed 7 · ProjectService 21 · Library 9
-npm run build          # 번들(폰트 8개 포함되는지 로그 확인)
-npm run test:e2e       # 편집기 E2E 24 (실제 Electron 창)
-npm run test:lib:e2e   # 책장 E2E 5 (표지·검색·재정렬)
+npm run typecheck        # 타입 0 errors (node + web)
+npm test                 # 유닛 104 (mdEmbed·정렬·이미지프롬프트·비율·Project·검색·문체·열람·목차·슬래시)
+npm run build            # 번들(폰트 8개 포함되는지 로그 확인)
+npm run test:e2e         # 편집기 E2E 32 (실제 Electron 창)
+npm run test:search:e2e  # 검색 E2E 9 (Ctrl+F 한국어 패널 + 책 전체 검색)
+npm run test:lib:e2e     # 책장 E2E 5 (표지·검색·재정렬)
+npm run test:folder:e2e  # AI 폴더·문체·슬래시/고스트 E2E 10
+npm run test:image:e2e   # 이미지 E2E 9 (생성 엔진은 스텁 PNG로 갈음)
+npm run test:ai          # AI 어댑터 유닛 8
+npm run test:ai:e2e      # AI E2E 8 (연속 실행 시 간헐 타임아웃 — 재실행하면 통과)
 ```
 
 E2E는 `playwright-core`가 로컬 Electron 바이너리를 그대로 띄운다. 별도 브라우저 설치 불필요.
+AI 관련 E2E는 로컬에 띄우는 **가짜 OpenAI 서버**로 돌기 때문에 API 키도 과금도 필요 없다.
+
+> **AI 이미지 생성(§7.6)만 예외** — 실제 생성은 로컬 CLI(`agy` → `codex` → `gemini`)에 의존한다.
+> Mac에 그 CLI가 없으면 앱의 이미지 생성 기능만 못 쓰고, 빌드·테스트에는 영향이 없다(스텁 사용).
 
 ## 4. 설치 시 Gatekeeper 경고 (무서명이라 정상)
 
