@@ -11,14 +11,16 @@ const SECTION_LABEL: Record<string, string> = {
   manuscript: '원고',
   characters: '캐릭터',
   world: '세계관',
-  notes: '노트'
+  notes: '노트',
+  style: '문체'
 }
 
 const SECTION_TYPE: Record<string, DocType> = {
   manuscript: 'chapter',
   characters: 'character',
   world: 'world',
-  notes: 'note'
+  notes: 'note',
+  style: 'style'
 }
 
 const STATUS_LABEL: Record<string, string> = { draft: '초', revising: '퇴', done: '완' }

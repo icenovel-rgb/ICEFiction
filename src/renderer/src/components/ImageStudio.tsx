@@ -12,19 +12,25 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ImageEngine, ImageEngineInfo } from '../../../shared/types'
-import { draftCoverPrompt, draftDocPrompt } from '../../../shared/imagePrompt'
+import {
+  ASPECT_KEYS,
+  ASPECTS,
+  draftCoverPrompt,
+  draftDocPrompt,
+  type AspectRatio
+} from '../../../shared/imagePrompt'
+import { toStandardEmbed } from '../../../shared/mdEmbed'
 import { useStore } from '../state/store'
 import { FONTS, fontStack } from '../state/settings'
 import { useImageStudio } from '../ui/imageStudio'
+import { insertOrReplace } from '../lib/editorBridge'
 import { assetUrl } from '../lib/media'
 
 type Phase = 'setup' | 'running' | 'done' | 'error'
 type TitlePos = 'top' | 'center' | 'bottom'
 
-const SIZES: { value: '1024x1024' | '1024x1536'; label: string }[] = [
-  { value: '1024x1024', label: '정사각 (인물)' },
-  { value: '1024x1536', label: '세로 (표지)' }
-]
+/** 비율 드롭다운 — 표는 shared/imagePrompt.ts가 정본(엔진이 못 맞추면 앱이 잘라 맞춘다). */
+const RATIO_OPTIONS = ASPECT_KEYS.map((k) => ({ value: k, label: ASPECTS[k].label }))
 
 /** 내장 글꼴만 제목에 쓴다 — PC에 없어도 같은 표지가 나온다. */
 const TITLE_FONTS = FONTS.filter((f) => f.label.includes('✓'))
@@ -37,7 +43,8 @@ const TITLE_FONTS = FONTS.filter((f) => f.label.includes('✓'))
 export function ImageStudio(): React.ReactElement | null {
   const target = useImageStudio((s) => s.target)
   if (!target) return null
-  const key = target.kind === 'cover' ? `cover:${target.bookId}` : `doc:${target.path}`
+  const key =
+    target.kind === 'cover' ? `cover:${target.bookId}` : `${target.kind}:${target.path}`
   return <Studio key={key} />
 }
 
@@ -56,7 +63,7 @@ function Studio(): React.ReactElement | null {
   const [engine, setEngine] = useState<ImageEngine | 'auto'>('auto')
   const [prompt, setPrompt] = useState('')
   const [style, setStyle] = useState('')
-  const [size, setSize] = useState<'1024x1024' | '1024x1536'>('1024x1024')
+  const [ratio, setRatio] = useState<AspectRatio>('1:1')
   const [phase, setPhase] = useState<Phase>('setup')
   const [log, setLog] = useState<string[]>([])
   const [error, setError] = useState('')
@@ -86,7 +93,7 @@ function Studio(): React.ReactElement | null {
     void window.api.imageEngines().then(setEngines)
 
     if (target.kind === 'cover') {
-      setSize('1024x1536')
+      setRatio('2:3')
       void window.api.getBookMeta(target.bookId).then((m) => {
         setBookTitle(m.title)
         setTitle(m.title)
@@ -98,7 +105,7 @@ function Studio(): React.ReactElement | null {
         }
       })
     } else {
-      setSize('1024x1024')
+      setRatio(target.kind === 'inline' ? '16:9' : '1:1')
       setStyle(project?.manifest.imageStyle ?? '')
       setPrompt(
         draftDocPrompt({
@@ -126,6 +133,12 @@ function Studio(): React.ReactElement | null {
         if (target?.kind === 'cover') {
           setArtUrl(`${d.url}&t=${Date.now()}`)
           await loadLibrary()
+        } else if (target?.kind === 'inline') {
+          // 본문 삽화 — 커서 자리에 표준 마크다운으로 넣는다(문서 기준 상대경로 §6.10).
+          insertOrReplace(`\n\n${toStandardEmbed(d.path, target.path)}\n\n`)
+          setArtUrl(assetUrl(d.path))
+          await loadAssets()
+          await refreshTree()
         } else {
           // 문서 이미지 → 프론트매터에 첨부하면 인스펙터 썸네일·갤러리 표지가 된다
           attachImage(d.path)
@@ -221,7 +234,7 @@ function Studio(): React.ReactElement | null {
       target,
       prompt,
       style: style.trim() || undefined,
-      size,
+      ratio,
       engine
     })
     // 스타일 바이블은 책에 저장해 다음 그림도 같은 화풍으로.
@@ -301,15 +314,15 @@ function Studio(): React.ReactElement | null {
                 </select>
               </label>
               <label className="studio-field">
-                <span>크기</span>
+                <span>비율</span>
                 <select
-                  value={size}
-                  onChange={(e) => setSize(e.target.value as '1024x1024' | '1024x1536')}
+                  value={ratio}
+                  onChange={(e) => setRatio(e.target.value as AspectRatio)}
                   disabled={phase === 'running'}
                 >
-                  {SIZES.map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label}
+                  {RATIO_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
                     </option>
                   ))}
                 </select>

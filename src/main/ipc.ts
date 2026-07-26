@@ -5,9 +5,17 @@
  * 보안 + Mac 이식성(BLUEPRINT §5). 서재/책장은 LibraryService, 열린 책은 ProjectService.
  */
 import { BrowserWindow, dialog, ipcMain, shell, type WebContents } from 'electron'
+import { promises as fsp } from 'node:fs'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { AIConfig, ChatMessage, DocType, ImageGenRequest, SaveDocRequest } from '../shared/types'
+import type {
+  AIConfig,
+  ChatMessage,
+  DocType,
+  ImageGenRequest,
+  SaveDocRequest,
+  SearchAllOptions
+} from '../shared/types'
 import { AIError } from './ai/errors'
 import { imageService } from './ai/image'
 import { aiService } from './services/ai'
@@ -126,6 +134,10 @@ export function registerIpc(): void {
 
   ipcMain.handle('md:convertEmbeds', async () => projectService.convertLegacyEmbeds())
 
+  ipcMain.handle('search:all', async (_e, query: string, opts?: SearchAllOptions) =>
+    projectService.searchAll(query, opts)
+  )
+
   ipcMain.handle('assets:import', async () => {
     const win = BrowserWindow.getFocusedWindow()
     const res = await dialog.showOpenDialog(win!, {
@@ -151,12 +163,19 @@ export function registerIpc(): void {
   // ── AI ──
   ipcMain.handle(
     'ai:buildContext',
-    async (_e, currentPath: string | null, currentBody: string, includeAssets?: boolean) =>
-      projectService.buildAiContext(currentPath, currentBody, includeAssets)
+    async (
+      _e,
+      currentPath: string | null,
+      currentBody: string,
+      includeAssets?: boolean,
+      includeStyle?: boolean
+    ) => projectService.buildAiContext(currentPath, currentBody, includeAssets, includeStyle)
   )
   ipcMain.handle('ai:attachmentInfo', async (_e, relPath: string) =>
     projectService.attachmentInfo(relPath)
   )
+  // 열람 프로토콜(§7.5) — AI가 요청한 파일을 읽어 첨부로 돌려준다(경로 검증은 서비스가 한다).
+  ipcMain.handle('ai:readFiles', async (_e, paths: string[]) => projectService.readForAi(paths))
   ipcMain.handle(
     'ai:listModels',
     async (_e, draft: Pick<AIConfig, 'kind' | 'baseUrl' | 'cliCommand'>, apiKey?: string) =>
@@ -216,7 +235,11 @@ async function runImageGeneration(req: ImageGenRequest, sender: WebContents): Pr
       const root = projectService.rootDir
       if (!root) throw new Error('열린 프로젝트가 없습니다')
       const stem = sanitizeAssetName(basename(req.target.path, '.md'))
-      const rel = `assets/images/${stem}.png`
+      // 본문 삽화는 한 문서에 여러 장이 붙는다 → 이름이 겹치지 않게 번호를 붙인다.
+      const rel =
+        req.target.kind === 'inline'
+          ? await uniqueAssetRel(stem)
+          : `assets/images/${stem}.png`
       destAbs = projectService.resolve(rel)
       relOrName = rel
       url = '' // 렌더러가 assetUrl(rel)로 만든다
@@ -225,7 +248,7 @@ async function runImageGeneration(req: ImageGenRequest, sender: WebContents): Pr
     const engine = await imageService.generate(
       {
         destAbsPath: destAbs,
-        size: req.size,
+        ratio: req.ratio,
         prompt: req.prompt,
         style: req.style,
         cover: req.target.kind === 'cover',
@@ -258,4 +281,17 @@ async function runImageGeneration(req: ImageGenRequest, sender: WebContents): Pr
 function sanitizeAssetName(name: string): string {
   const base = basename(name).replace(/[\\/:*?"<>|]/g, '_').trim()
   return base || 'image'
+}
+
+/** 본문 삽화용 빈 이름 찾기 — `<문서명>-1.png`, `-2`, … 처음 비어 있는 번호. */
+async function uniqueAssetRel(stem: string): Promise<string> {
+  for (let n = 1; n < 1000; n += 1) {
+    const rel = `assets/images/${stem}-${n}.png`
+    try {
+      await fsp.access(projectService.resolve(rel))
+    } catch {
+      return rel // 없는 번호 = 쓸 자리
+    }
+  }
+  return `assets/images/${stem}-${Date.now()}.png`
 }

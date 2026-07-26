@@ -52,7 +52,7 @@ function ok(label: string): void {
 {
   const ins = buildInstruction({
     destAbsPath: 'C:\\books\\폭우\\cover-art.png',
-    size: '1024x1536',
+    ratio: '2:3',
     prompt: draftCoverPrompt('폭우의 도시'),
     style: '느와르, 청회색 팔레트',
     cover: true
@@ -61,6 +61,7 @@ function ok(label: string): void {
   assert(/upper third/i.test(ins), '표지인데 제목 자리(상단) 비우기 구도 지시가 없음')
   assert(ins.includes('C:\\books\\폭우\\cover-art.png'), '저장 경로가 지시문에 없음')
   assert(ins.includes('1024x1536'), '출력 크기가 지시문에 없음')
+  assert(ins.includes('Aspect ratio: 2:3'), '비율이 지시문에 없음')
   assert(ins.includes('느와르, 청회색 팔레트'), '스타일 바이블이 지시문에 없음')
   ok('표지 지시문: no-writing + 상단 비우기 + 경로·크기·스타일 포함')
 }
@@ -69,7 +70,7 @@ function ok(label: string): void {
 {
   const ins = buildInstruction({
     destAbsPath: '/tmp/kim.png',
-    size: '1024x1024',
+    ratio: '1:1',
     prompt: draftDocPrompt({ name: '김철수', type: 'character', synopsis: '전직 형사. 비를 싫어한다.' })
   })
   assert(ins.includes(NO_TEXT_CONSTRAINT), '문서 이미지 지시문에 no-writing 제약 없음')

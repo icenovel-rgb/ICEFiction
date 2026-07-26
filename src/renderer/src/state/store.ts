@@ -27,6 +27,12 @@ interface State {
   activePath: string | null
   /** 섹션 갤러리로 펼쳐 보는 폴더 경로(예: 'characters'). null이면 에디터를 본다(§6.2). */
   galleryPath: string | null
+  /**
+   * 전체 검색 → 에디터 점프 예약(본문 기준 오프셋). 문서 내용이 store에 실린 **뒤에만** 세팅해야
+   * 한다 — 먼저 세우면 Editor가 옛 문서에 선택을 찍는다(계획 리스크 '점프 타이밍'). Editor가
+   * 본문 교체 effect **다음에 선언된** effect에서 소비하고 null로 되돌린다.
+   */
+  pendingJump: { from: number; to: number } | null
   frontmatter: Frontmatter
   body: string
   dirty: boolean
@@ -46,6 +52,10 @@ interface State {
   closeBook: () => Promise<void>
 
   selectDoc: (path: string) => Promise<void>
+  /** 검색 결과로 이동 — 문서를 열고(이미 열려 있으면 그대로) 해당 위치를 선택·스크롤. */
+  jumpTo: (path: string, from: number, to: number) => Promise<void>
+  /** Editor가 점프를 소비한 뒤 호출. */
+  clearJump: () => void
   openGallery: (path: string) => void
   closeGallery: () => void
   setBody: (body: string) => void
@@ -71,6 +81,7 @@ const CLEARED = {
   assets: [],
   activePath: null,
   galleryPath: null,
+  pendingJump: null,
   body: '',
   frontmatter: {},
   dirty: false
@@ -89,6 +100,7 @@ export const useStore = create<State>((set, get) => {
       assets: [],
       activePath: null,
       galleryPath: 'manuscript', // 책을 열면 원고 갤러리부터 — 빈 에디터 대신 챕터가 한눈에
+      pendingJump: null,
       body: '',
       frontmatter: {},
       dirty: false
@@ -104,6 +116,7 @@ export const useStore = create<State>((set, get) => {
     assets: [],
     activePath: null,
     galleryPath: null,
+    pendingJump: null,
     frontmatter: {},
     body: '',
     dirty: false,
@@ -186,6 +199,17 @@ export const useStore = create<State>((set, get) => {
         dirty: false,
         sessionStartChars: Array.from(doc.body).length
       })
+    },
+
+    async jumpTo(path, from, to) {
+      // 다른 문서면 먼저 열어 본문을 store에 싣는다. 같은 문서면 갤러리만 닫는다.
+      if (get().activePath !== path) await get().selectDoc(path)
+      else set({ galleryPath: null })
+      set({ pendingJump: { from, to } }) // 반드시 본문이 실린 뒤 — 순서가 정확성의 전부다
+    },
+
+    clearJump() {
+      set({ pendingJump: null })
     },
 
     openGallery(path) {

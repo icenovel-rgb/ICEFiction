@@ -232,9 +232,11 @@ export function AiPanel(): React.ReactElement {
   const messages = useAi((s) => s.messages)
   const streaming = useAi((s) => s.streaming)
   const streamText = useAi((s) => s.streamText)
+  const openingFiles = useAi((s) => s.openingFiles)
   const error = useAi((s) => s.error)
   const includeContext = useAi((s) => s.includeContext)
   const includeAssets = useAi((s) => s.includeAssets)
+  const includeStyle = useAi((s) => s.includeStyle)
   const context = useAi((s) => s.context)
   const attachments = useAi((s) => s.attachments)
   const refreshContext = useAi((s) => s.refreshContext)
@@ -243,10 +245,12 @@ export function AiPanel(): React.ReactElement {
   const removeAttachment = useAi((s) => s.removeAttachment)
   const send = useAi((s) => s.send)
   const quickAction = useAi((s) => s.quickAction)
+  const analyzeStyle = useAi((s) => s.analyzeStyle)
   const cancel = useAi((s) => s.cancel)
   const clearChat = useAi((s) => s.clearChat)
   const setIncludeContext = useAi((s) => s.setIncludeContext)
   const setIncludeAssets = useAi((s) => s.setIncludeAssets)
+  const setIncludeStyle = useAi((s) => s.setIncludeStyle)
 
   // 지금 원고를 반영해 맥락 칩을 라이브로 갱신(디바운스) — "AI가 항상 보는" 것을 눈에 보이게.
   const activePath = useStore((s) => s.activePath)
@@ -264,7 +268,7 @@ export function AiPanel(): React.ReactElement {
   useEffect(() => {
     const t = setTimeout(() => void refreshContext(), 600)
     return () => clearTimeout(t)
-  }, [activePath, body, includeContext, includeAssets, refreshContext])
+  }, [activePath, body, includeContext, includeAssets, includeStyle, refreshContext])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
@@ -323,6 +327,15 @@ export function AiPanel(): React.ReactElement {
             {includeAssets ? '📂 자료 읽는 중' : '○ 자료 끔'}
           </button>
         )}
+        {includeContext && (
+          <button
+            className={`ai-chip toggle${includeStyle ? ' on' : ''}`}
+            onClick={() => setIncludeStyle(!includeStyle)}
+            title="문체 방(style/)의 지침·참고 원고를 매 요청 맨 앞에 실어 그 문체로만 쓰게 합니다"
+          >
+            {includeStyle ? '✍ 문체 지키는 중' : '○ 문체 끔'}
+          </button>
+        )}
         {includeContext &&
           context?.chips.map((c, i) => (
             <span key={i} className={`ai-chip ctx ctx-${c.kind}`}>
@@ -357,6 +370,9 @@ export function AiPanel(): React.ReactElement {
           <div className="ai-hint">
             채팅으로 물어보거나, 아래 빠른 액션으로 이어쓰기·퇴고를 요청하세요.
             <br />
+            본문에서 <b>「/」</b>를 치면 쓰던 자리에서 바로 부릅니다 — 제안은 흐린 글씨로 먼저
+            보이고 <kbd>Tab</kbd>이 확정, <kbd>Esc</kbd>가 취소입니다.
+            <br />
             📎로 자료 폴더의 이미지·PDF·메모를 첨부하면 AI가 함께 읽습니다.
             <br />
             결과는 &lsquo;본문에 넣기&rsquo;로만 원고에 반영됩니다.
@@ -374,7 +390,11 @@ export function AiPanel(): React.ReactElement {
         ))}
         {streaming && (
           <div className="ai-msg ai-msg-assistant">
-            <div className="ai-msg-body">{streamText || '…'}</div>
+            <div className="ai-msg-body">
+              {openingFiles.length > 0
+                ? `📖 ${openingFiles.join(', ')} 읽는 중…`
+                : streamText || '…'}
+            </div>
           </div>
         )}
         {error && <div className="ai-error">{error}</div>}
@@ -386,6 +406,13 @@ export function AiPanel(): React.ReactElement {
         </button>
         <button onClick={() => quickAction('revise')} disabled={streaming || !connected}>
           선택 퇴고
+        </button>
+        <button
+          onClick={() => void analyzeStyle()}
+          disabled={streaming || !connected}
+          title="문체 방(style/samples)의 기존 원고를 분석해 문체지침 초안을 만듭니다"
+        >
+          ✍ 문체 분석
         </button>
       </div>
 

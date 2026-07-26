@@ -20,7 +20,13 @@ import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ImageEngine, ImageEngineInfo } from '../../shared/types'
-import { buildInstruction, oneLinePrompt, type InstructionInput } from '../../shared/imagePrompt'
+import {
+  ASPECTS,
+  buildInstruction,
+  cropRect,
+  oneLinePrompt,
+  type InstructionInput
+} from '../../shared/imagePrompt'
 import { AIError } from './errors'
 import { probeVersion, runProc } from './proc'
 
@@ -90,6 +96,7 @@ export class ImageService {
       onProgress(`${ENGINE_LABEL[engine]}로 그리는 중…`)
       try {
         await this.runEngine(engine, input, onProgress, signal)
+        await this.cropToRatio(input.destAbsPath, input.ratio, onProgress)
         return engine // 결과 파일 확인 완료
       } catch (err) {
         if (err instanceof AIError && err.kind === 'cancelled') throw err
@@ -189,6 +196,37 @@ export class ImageService {
       await this.assertFresh(input.destAbsPath, startedAt)
     } finally {
       void fs.rm(instrPath, { force: true }).catch(() => {})
+    }
+  }
+
+  /**
+   * 엔진이 요청한 비율로 못 뽑았을 때 **중앙을 기준으로 잘라** 정확한 비율을 만든다(§7.6).
+   *
+   * gpt-image 계열은 1:1·2:3·3:2 세 가지만 만든다 — 16:9나 4:3을 그대로 달라고 하면 가장 가까운 크기로
+   * 준다. 그때 앱이 액자에 맞춰 가장자리를 잘라 낸다. Electron의 nativeImage를 쓰므로 새 의존성이 없다.
+   * 자르기에 실패해도 그림 자체는 살아 있으니 조용히 원본을 남긴다(생성 전체를 실패로 만들지 않는다).
+   */
+  private async cropToRatio(
+    dest: string,
+    ratio: InstructionInput['ratio'],
+    onProgress: (t: string) => void
+  ): Promise<void> {
+    try {
+      const { nativeImage } = await import('electron')
+      const img = nativeImage.createFromPath(dest)
+      const size = img.getSize()
+      const rect = cropRect({ w: size.width, h: size.height }, ratio)
+      if (!rect) return // 이미 원하는 비율(오차 2% 이내)
+      const cropped = img.crop(rect)
+      const png = cropped.toPNG()
+      if (png.length < 1000) return // 자르기 실패 — 원본을 그대로 둔다
+      await fs.writeFile(dest, png)
+      const { target } = ASPECTS[ratio]
+      onProgress(
+        `${size.width}x${size.height} → ${rect.width}x${rect.height} (${ratio}, 목표 ${target.w}x${target.h})`
+      )
+    } catch {
+      /* nativeImage 실패(형식·메모리) — 원본 유지 */
     }
   }
 

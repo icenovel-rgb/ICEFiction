@@ -16,7 +16,66 @@
  * 이 파일은 순수 함수만 담는다 — 그대로 단위 테스트한다.
  */
 
-export type ImageSize = '1024x1024' | '1024x1536' | '1536x1024'
+/**
+ * 삽화 비율(§7.6). 엔진이 실제로 만들어 주는 크기는 셋뿐인 경우가 많으므로(gpt-image: 1:1·2:3·3:2),
+ * **요청 크기(request)** 와 **최종 크기(target)** 를 나눠 둔다. 엔진이 비율을 지원하면 그대로 나오고,
+ * 못 맞추면 앱이 중앙을 기준으로 잘라 정확한 비율을 만든다(image.ts cropToRatio).
+ *
+ * 사진을 인화할 때 원판보다 좁은 액자에 맞춰 가장자리를 조금 잘라 내는 것과 같다.
+ */
+export type AspectRatio = '1:1' | '3:2' | '2:3' | '4:3' | '3:4' | '16:9' | '9:16'
+
+export interface AspectSpec {
+  /** 드롭다운 표시 이름 */
+  label: string
+  /** 최종 결과 크기(이 비율이 되도록 필요하면 잘라낸다) */
+  target: { w: number; h: number }
+  /** 엔진에 요청할 크기 — 엔진이 확실히 만드는 세 가지 중 가장 가까운 것 */
+  request: { w: number; h: number }
+}
+
+const SQUARE = { w: 1024, h: 1024 }
+const LAND = { w: 1536, h: 1024 }
+const PORT = { w: 1024, h: 1536 }
+
+export const ASPECTS: Record<AspectRatio, AspectSpec> = {
+  '1:1': { label: '1:1 정사각 (인물·아이콘)', target: SQUARE, request: SQUARE },
+  '3:2': { label: '3:2 가로 (기본 가로)', target: LAND, request: LAND },
+  '2:3': { label: '2:3 세로 (책 표지)', target: PORT, request: PORT },
+  '4:3': { label: '4:3 가로 (고전 화면)', target: { w: 1365, h: 1024 }, request: LAND },
+  '3:4': { label: '3:4 세로 (인물 전신)', target: { w: 1024, h: 1365 }, request: PORT },
+  '16:9': { label: '16:9 와이드 (영상·배너)', target: { w: 1536, h: 864 }, request: LAND },
+  '9:16': { label: '9:16 세로 (쇼츠·모바일)', target: { w: 864, h: 1536 }, request: PORT }
+}
+
+export const ASPECT_KEYS = Object.keys(ASPECTS) as AspectRatio[]
+
+/** 알 수 없는 값이 와도 안전하게(옛 설정·수기 편집 대비). */
+export function aspectOf(ratio: string | undefined): AspectRatio {
+  return ratio && ratio in ASPECTS ? (ratio as AspectRatio) : '1:1'
+}
+
+/**
+ * 실제 이미지 크기를 목표 비율로 자를 사각형(중앙 기준). 이미 비율이 맞으면 null.
+ * 허용 오차 2% — 엔진이 1536×864 대신 1536×866을 줘도 굳이 자르지 않는다(화질 손실 방지).
+ */
+export function cropRect(
+  actual: { w: number; h: number },
+  ratio: AspectRatio,
+  tolerance = 0.02
+): { x: number; y: number; width: number; height: number } | null {
+  const { target } = ASPECTS[ratio]
+  const want = target.w / target.h
+  if (actual.w <= 0 || actual.h <= 0) return null
+  const have = actual.w / actual.h
+  if (Math.abs(have - want) / want <= tolerance) return null
+  if (have > want) {
+    const width = Math.round(actual.h * want)
+    return { x: Math.round((actual.w - width) / 2), y: 0, width, height: actual.h }
+  }
+  const height = Math.round(actual.w / want)
+  return { x: 0, y: Math.round((actual.h - height) / 2), width: actual.w, height }
+}
 
 /** 어떤 이미지든 반드시 붙는 "글자 금지" 제약. 위 ①의 방어선이다. */
 export const NO_TEXT_CONSTRAINT = [
@@ -106,7 +165,7 @@ export function draftCoverPrompt(bookTitle: string, hint?: string): string {
 export interface InstructionInput {
   /** 생성 파일이 저장될 **절대경로**(플랫폼 그대로). 에이전트가 여기에 PNG를 쓴다. */
   destAbsPath: string
-  size: ImageSize
+  ratio: AspectRatio
   /** 장면 프롬프트(위 draft* 결과를 사용자가 수정한 것) */
   prompt: string
   /** 프로젝트 공통 스타일 바이블 — 모든 그림의 화풍을 맞춘다 */
@@ -124,13 +183,16 @@ export interface InstructionInput {
  * 인자가 깨지고 8191자 제한에 걸린다(실측). CLI에는 "이 파일을 읽고 그대로 하라"는 한 줄만 준다.
  */
 export function buildInstruction(input: InstructionInput): string {
+  const { target, request } = ASPECTS[aspectOf(input.ratio)]
   const lines: string[] = [
     'You have an image generation tool. Generate ONE image and save it as a PNG file.',
     '',
     'Destination (save the final PNG to this EXACT absolute path):',
     input.destAbsPath,
     '',
-    `Output size: ${input.size}`,
+    // 비율을 먼저 못박고, 그 비율이 안 되는 모델을 위해 대체 크기까지 알려 준다(앱이 잘라 맞춘다).
+    `Aspect ratio: ${input.ratio} — output size ${target.w}x${target.h}.`,
+    `If your tool cannot produce that exact size, use ${request.w}x${request.h} and keep the subject centered.`,
     '',
     'Image prompt:',
     input.prompt.trim()

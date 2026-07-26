@@ -6,7 +6,7 @@
  * 이건 책 안에서 인물·장면을 고르는 화면이다.
  */
 import { useMemo, useState } from 'react'
-import type { TreeNode } from '../../../shared/types'
+import type { DocType, TreeNode } from '../../../shared/types'
 import { useStore } from '../state/store'
 import { assetUrl } from '../lib/media'
 import { openPrompt } from '../ui/dialogs'
@@ -15,14 +15,26 @@ const SECTION_LABEL: Record<string, string> = {
   manuscript: '원고',
   characters: '캐릭터',
   world: '세계관',
-  notes: '노트'
+  notes: '노트',
+  style: '문체'
 }
 
 const SECTION_HINT: Record<string, string> = {
   manuscript: '챕터를 눌러 이어 쓰세요.',
   characters: '인물 카드를 눌러 시트를 엽니다. 인스펙터에서 이미지를 붙이면 여기 얼굴이 뜹니다.',
   world: '설정 문서를 눌러 엽니다. 폴더로 카테고리를 나눌 수 있습니다.',
-  notes: '메모를 눌러 엽니다.'
+  notes: '메모를 눌러 엽니다.',
+  style:
+    '문체지침에 적은 규칙은 AI의 모든 요청에 항상 실립니다. samples 폴더에 기존 원고를 넣으면 그 문체를 따라 씁니다.'
+}
+
+/** 섹션 폴더 → 새 문서의 기본 타입(바인더의 SECTION_TYPE과 같은 표). */
+const SECTION_TYPE: Record<string, DocType> = {
+  manuscript: 'chapter',
+  characters: 'character',
+  world: 'world',
+  notes: 'note',
+  style: 'style'
 }
 
 const STATUS_LABEL: Record<string, string> = { draft: '초고', revising: '퇴고 중', done: '완료' }
@@ -32,7 +44,8 @@ const TYPE_GLYPH: Record<string, string> = {
   chapter: '✎',
   character: '☺',
   world: '🜨',
-  note: '✦'
+  note: '✦',
+  style: '✍'
 }
 
 /** 트리에서 경로에 해당하는 노드를 찾는다. */
@@ -127,7 +140,7 @@ export function SectionGallery(): React.ReactElement | null {
       confirmLabel: '만들기'
     })
     if (title) {
-      const type = section === 'manuscript' ? 'chapter' : section === 'characters' ? 'character' : section === 'world' ? 'world' : 'note'
+      const type = SECTION_TYPE[section] ?? 'note'
       await createDoc(galleryPath!, type, title)
     }
   }

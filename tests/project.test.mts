@@ -268,7 +268,8 @@ async function main(): Promise<void> {
   // 18) 자료 폴더 자동 읽기 — AI가 스스로 훑어 문서 내용을 맥락에 포함(§7.5).
   //     (지금 assets/에는 note.txt·doc.pdf·scan.pdf·이미지가 있음)
   const ctxAssets = await svc.buildAiContext(seedPath, '비 온다.', true)
-  assert(ctxAssets.text.includes('자료 폴더'), '자료 폴더 섹션 없음')
+  assert(ctxAssets.text.includes('자료 내용'), '자료 내용 섹션 없음')
+  assert(ctxAssets.text.includes('프로젝트 전체 목차'), '전체 목차 섹션 없음')
   assert(ctxAssets.text.includes('연구 노트 핵심 내용'), 'txt 문서 자동 읽기 실패')
   assert(ctxAssets.text.includes('ATTACH_PDF_OK'), 'PDF 문서 자동 읽기 실패')
   assert(ctxAssets.chips.some((c) => c.kind === 'asset'), '자료 칩 없음')

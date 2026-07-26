@@ -58,7 +58,8 @@ export class AIService {
       case 'anthropic':
         return new AnthropicAI(cfg.model, key)
       case 'cli':
-        return new CliAI(cfg.cliCommand || 'claude', cfg.model)
+        // 열린 소설 폴더를 넘겨 CLI가 원고를 직접 읽게 한다(읽기 전용 — §7.5).
+        return new CliAI(cfg.cliCommand || 'claude', cfg.model, projectService.rootDir ?? undefined)
       case 'openai':
       default:
         return new OpenAICompatAI(cfg.baseUrl || DEFAULT.baseUrl!, cfg.model, key)
@@ -95,8 +96,14 @@ export class AIService {
     this.controllers.get(requestId)?.abort()
   }
 
-  /** 첨부 참조(경로만)를 실제 데이터로 채운다 — 생성 직전 1회. 큰 base64/텍스트의 이중 IPC를 피한다(§7.5). */
-  private async resolveAttachments(messages: ChatMessage[]): Promise<ChatMessage[]> {
+  /**
+   * 첨부 참조(경로만)를 실제 데이터로 채운다 — 생성 직전 1회. 큰 base64/텍스트의 이중 IPC를 피한다(§7.5).
+   * CLI 계열은 이미지를 경로로 직접 열므로 base64를 만들지 않는다(수 MB 낭비 방지 — attachments.ts).
+   */
+  private async resolveAttachments(
+    messages: ChatMessage[],
+    wantImageData: boolean
+  ): Promise<ChatMessage[]> {
     return Promise.all(
       messages.map(async (m) => {
         if (!m.attachments || m.attachments.length === 0) return m
@@ -104,6 +111,9 @@ export class AIService {
           m.attachments.map(async (a) => {
             if (a.dataBase64 || a.text) return a // 이미 채워졌으면 그대로
             try {
+              if (a.kind === 'image' && !wantImageData) {
+                return { ...a, absPath: projectService.resolve(a.path) }
+              }
               return await projectService.resolveAttachment(a.path)
             } catch {
               return null // 읽기 실패한 첨부는 조용히 제외(대화는 계속)
@@ -120,8 +130,9 @@ export class AIService {
     const controller = new AbortController()
     this.controllers.set(requestId, controller)
     try {
-      const adapter = await this.adapter()
-      const resolved = await this.resolveAttachments(messages)
+      const cfg = await this.getConfig()
+      const adapter = this.build(cfg, await secretService.getKey(keyName(cfg.kind)))
+      const resolved = await this.resolveAttachments(messages, cfg.kind !== 'cli')
       const text = await adapter.generate(
         resolved,
         (delta) => {

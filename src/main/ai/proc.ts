@@ -40,9 +40,12 @@ export function killTree(proc: ChildProcess | null): void {
   }
 }
 
-/** CLI 실행 — Windows는 cmd.exe 경유(npm 셸 스크립트 해석). cwd는 항상 tmp. */
-export function spawnCli(command: string, args: string[]): ChildProcess {
-  const opts = { windowsHide: true, env: augmentedEnv(), cwd: tmpdir() }
+/**
+ * CLI 실행 — Windows는 cmd.exe 경유(npm 셸 스크립트 해석).
+ * cwd 기본값은 tmp다(프로젝트 폴더 잠금 방지). 폴더를 읽혀야 할 때만 호출부가 cwd를 넘긴다.
+ */
+export function spawnCli(command: string, args: string[], cwd = tmpdir()): ChildProcess {
+  const opts = { windowsHide: true, env: augmentedEnv(), cwd }
   if (IS_WIN) return spawn('cmd.exe', ['/c', command, ...args], opts)
   return spawn(command, args, opts)
 }
@@ -56,6 +59,8 @@ export interface RunOptions {
   stdin?: string
   /** stdout 한 줄마다 */
   onLine?: (line: string) => void
+  /** 작업 디렉터리(기본 tmp) — 원고 폴더를 읽혀야 하는 CLI 텍스트 생성에서만 넘긴다. */
+  cwd?: string
 }
 
 export interface RunResult {
@@ -75,7 +80,7 @@ export function runProc(
   signal: AbortSignal,
   opts: RunOptions
 ): Promise<RunResult> {
-  const proc = spawnCli(command, args)
+  const proc = spawnCli(command, args, opts.cwd)
   const tail: string[] = []
   let lastActivity = Date.now()
 

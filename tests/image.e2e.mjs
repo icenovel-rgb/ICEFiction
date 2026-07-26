@@ -194,8 +194,32 @@ async function main() {
     )
     console.log('  ✓ 책장 카드에 합성 표지 렌더')
 
+    // ── 본문 삽화(§6.1b) + 비율 크롭(§7.6) ──
+    // 엔진은 2:3(1024x1536)만 뱉는 스텁이다. 16:9를 요청하면 앱이 중앙을 잘라 비율을 맞춰야 한다.
+    const inline = await page.evaluate(async () => {
+      const done = new Promise((resolve) => window.api.onImageDone((d) => resolve(d)))
+      await window.api.generateImage({
+        requestId: 'inline-1',
+        target: { kind: 'inline', path: 'manuscript/01-첫-장.md' },
+        prompt: '비 내리는 항구',
+        ratio: '16:9',
+        engine: 'auto'
+      })
+      return done
+    })
+    assert.equal(inline.path, 'assets/images/01-첫-장-1.png', `본문 삽화 경로 오류: ${inline.path}`)
+    const png = await fs.readFile(join(bookDir, 'assets', 'images', '01-첫-장-1.png'))
+    const w = png.readUInt32BE(16)
+    const h = png.readUInt32BE(20)
+    assert(
+      Math.abs(w / h - 16 / 9) / (16 / 9) < 0.02,
+      `16:9로 잘리지 않음: ${w}x${h} (비율 ${(w / h).toFixed(3)})`
+    )
+    assert.equal(w, 1024, `가로는 원본 그대로여야 한다: ${w}`)
+    console.log(`  ✓ 본문 삽화: 번호 붙은 파일 + 16:9 자동 크롭 (${w}x${h})`)
+
     assert.equal(errors.length, 0, `런타임 에러: ${errors.join(' | ')}`)
-    console.log('\n✅ 이미지 생성 E2E: 8개 검증 통과 (엔진만 스텁, 배선은 전부 실제)')
+    console.log('\n✅ 이미지 생성 E2E: 9개 검증 통과 (엔진만 스텁, 배선은 전부 실제)')
   } finally {
     await app.close()
     await fs.rm(home, { recursive: true, force: true })

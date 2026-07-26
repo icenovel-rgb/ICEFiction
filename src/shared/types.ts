@@ -15,6 +15,7 @@ export type DocType =
   | 'rule' // (구) 세계관: 설정·규칙 — 하위호환
   | 'glossary' // (구) 세계관: 용어집 — 하위호환
   | 'note' // 자유 노트 (notes/)
+  | 'style' // 문체 지침·문체 참고 원고 (style/ — AI 하네스, §7.2a)
   | 'part' // 부(Part) 폴더 — 원고 계층
   | 'folder' // 일반 폴더(카테고리)
 
@@ -123,6 +124,41 @@ export interface AssetItem {
   kind: 'image' | 'video' | 'other'
 }
 
+// ── 책 전체 검색(BLUEPRINT §6.9) ──
+
+/**
+ * 매치 한 건. 위치(from/to·line)는 **본문(body) 기준** 문자 오프셋이다(프론트매터 제외) —
+ * 에디터가 body만 표시하므로 그대로 selection에 쓸 수 있다.
+ */
+export interface SearchMatch {
+  line: number // 1-시작 줄 번호(본문 기준)
+  from: number
+  to: number
+  preview: string // 매치 주변 문맥(줄 안에서 클립)
+  previewFrom: number // preview 안에서 매치 시작(하이라이트용)
+  previewTo: number
+}
+
+/** 문서 하나의 검색 결과 묶음. */
+export interface SearchFileResult {
+  path: string // 프로젝트 루트 기준 상대 POSIX
+  section: string // manuscript | characters | world | notes
+  title: string
+  titleMatch: boolean // 제목에도 걸렸는지(본문 위치가 없으므로 별도 플래그)
+  matches: SearchMatch[]
+  truncated: boolean // 파일당 상한으로 잘림
+}
+
+export interface SearchAllResult {
+  files: SearchFileResult[]
+  totalMatches: number
+  truncated: boolean // 전체 상한으로 잘림
+}
+
+export interface SearchAllOptions {
+  caseSensitive?: boolean
+}
+
 // ── AI 어시스턴트(BLUEPRINT §7) ──
 
 /** 프로바이더 계열. openai=OpenAI 호환(Ollama·LM Studio·OpenRouter 포함), cli=`claude -p` 등. */
@@ -165,6 +201,8 @@ export interface AIAttachment {
   mediaType?: string // 이미지 MIME (image/png 등)
   dataBase64?: string // 이미지 원본 바이트(main이 채움)
   text?: string // PDF·텍스트 추출 결과(main이 채움)
+  /** 파일의 절대경로(main이 채움) — CLI 에이전트에게 "이 파일을 직접 열어 보라"고 알려 줄 때 쓴다(§7.5). */
+  absPath?: string
 }
 
 /** 첨부 자료 요약(렌더러 칩·토큰 추정용) — 실제 데이터는 담지 않는다. */
@@ -188,7 +226,7 @@ export interface ChatMessage {
 /** 컨텍스트 빌더가 자동 포함한 항목 하나(칩 표시용, §7.2). */
 export interface AIContextChip {
   label: string
-  kind: 'scene' | 'character' | 'world' | 'synopsis' | 'asset'
+  kind: 'scene' | 'character' | 'world' | 'synopsis' | 'asset' | 'style'
 }
 
 /** 매 요청마다 조립되는 집필 맥락 — AI가 "항상 보는" 것. */
@@ -213,6 +251,7 @@ export interface ImageEngineInfo {
 export type ImageTarget =
   | { kind: 'doc'; path: string } // 문서(캐릭터·장소…) 첨부 이미지 → 프론트매터 images
   | { kind: 'cover'; bookId: string } // 책 표지 아트(글자 없음) → 제목은 앱이 얹는다
+  | { kind: 'inline'; path: string } // 본문 삽화(/삽화) → 커서 자리에 ![](경로)로 삽입
 
 export interface ImageGenRequest {
   requestId: string
@@ -221,7 +260,8 @@ export interface ImageGenRequest {
   prompt: string
   /** 프로젝트 공통 스타일 바이블 */
   style?: string
-  size: '1024x1024' | '1024x1536' | '1536x1024'
+  /** 화면 비율(§7.6) — 엔진이 못 맞추면 앱이 중앙 기준으로 잘라 맞춘다. */
+  ratio: import('./imagePrompt').AspectRatio
   engine: ImageEngine | 'auto'
 }
 
@@ -301,14 +341,20 @@ export interface IceApi {
   openPdf(relPath: string): Promise<void>
   /** 레거시 ![[..]] 임베드를 표준 마크다운으로 일괄 변환(변환 전 스냅샷). 반환=바뀐 파일·임베드 수. */
   convertLegacyEmbeds(): Promise<{ files: number; embeds: number }>
+  /** 책 전체 검색(§6.9) — 4개 섹션 .md의 제목+본문 부분일치. */
+  searchAll(query: string, opts?: SearchAllOptions): Promise<SearchAllResult>
   // ── AI ──
   buildAiContext(
     currentPath: string | null,
     currentBody: string,
-    includeAssets?: boolean
+    includeAssets?: boolean,
+    /** 문체 방(style/)을 하네스로 실을지 — 기본 켜짐(§7.2a). */
+    includeStyle?: boolean
   ): Promise<AIContext>
   /** 자료(이미지·PDF·텍스트)의 첨부 가능 여부·요약을 조사(칩·토큰 추정용). */
   aiAttachmentInfo(relPath: string): Promise<AIAttachmentInfo>
+  /** 열람 프로토콜(§7.5) — AI가 `[[열람: 경로]]`로 요청한 파일을 읽어 첨부로 돌려준다(최대 5개). */
+  readAiFiles(paths: string[]): Promise<AIAttachment[]>
   listAiModels(
     draft: Pick<AIConfig, 'kind' | 'baseUrl' | 'cliCommand'>,
     apiKey?: string

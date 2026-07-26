@@ -27,7 +27,7 @@ function flavorOf(command: string): Flavor {
   return 'generic'
 }
 
-function flattenPrompt(messages: ChatMessage[]): string {
+function flattenPrompt(messages: ChatMessage[], projectRoot?: string): string {
   const system = messages
     .filter((m) => m.role === 'system')
     .map((m) => m.content)
@@ -36,7 +36,11 @@ function flattenPrompt(messages: ChatMessage[]): string {
     .filter((m) => m.role !== 'system')
     .map((m) => `${m.role === 'user' ? '사용자' : 'assistant'}: ${attachmentsToText(m)}`)
     .join('\n\n')
-  return system ? `${system}\n\n${convo}` : convo
+  // CLI 에이전트는 파일을 직접 읽을 수 있다 — 원고 폴더 위치를 알려 주면 목차 너머까지 스스로 확인한다.
+  const dirNote = projectRoot
+    ? `원고 폴더(직접 읽어도 됩니다. 다만 **읽기만** 하고 파일을 고치지 마세요): ${projectRoot}\n\n`
+    : ''
+  return system ? `${dirNote}${system}\n\n${convo}` : `${dirNote}${convo}`
 }
 
 /** codex 모델 목록을 로컬 캐시(~/.codex/models_cache.json)에서 읽는다 — 드롭다운 자동 채움. */
@@ -76,7 +80,9 @@ export class CliAI implements TextAI {
   private flavor: Flavor
   constructor(
     private command = 'claude',
-    private model = ''
+    private model = '',
+    /** 열린 소설 폴더(절대경로) — 주어지면 CLI에 읽기 권한(--add-dir)을 주고 위치를 알려 준다(§7.5). */
+    private projectRoot?: string
   ) {
     this.flavor = flavorOf(command)
     this.name =
@@ -118,12 +124,14 @@ export class CliAI implements TextAI {
     signal: AbortSignal
   ): Promise<string> {
     const modelArgs = this.model ? ['--model', this.model] : []
-    const args = ['-p', '--output-format', 'stream-json', '--verbose', ...modelArgs]
+    // --add-dir: 원고 폴더를 읽을 수 있게 한다. `claude -p`는 기본이 읽기 권한이라 원고가 고쳐지지 않는다.
+    const dirArgs = this.projectRoot ? ['--add-dir', this.projectRoot] : []
+    const args = ['-p', '--output-format', 'stream-json', '--verbose', ...dirArgs, ...modelArgs]
     let result = ''
     const unparsed: string[] = []
     const { code, tail } = await this.runCli(
       args,
-      flattenPrompt(messages),
+      flattenPrompt(messages, this.projectRoot),
       (line) => {
         const t = line.trim()
         try {
@@ -160,11 +168,15 @@ export class CliAI implements TextAI {
   ): Promise<string> {
     const outFile = join(tmpdir(), `icefic-codex-${Date.now()}-${process.pid}.txt`)
     const modelArgs = this.model ? ['-m', this.model] : []
+    // --add-dir: 원고 폴더 읽기 허용. codex exec는 기본 샌드박스가 읽기 전용이라 원고는 안전하다.
+    const dirArgs = this.projectRoot
+      ? ['--add-dir', this.projectRoot, '--skip-git-repo-check']
+      : []
     // --json: 진행 이벤트 스트리밍 / -o: 최종 메시지 파일(정본) / '-': 프롬프트를 stdin에서 읽기
-    const args = ['exec', '--json', '--color', 'never', '-o', outFile, ...modelArgs, '-']
+    const args = ['exec', '--json', '--color', 'never', '-o', outFile, ...dirArgs, ...modelArgs, '-']
     const { code, tail } = await this.runCli(
       args,
-      flattenPrompt(messages),
+      flattenPrompt(messages, this.projectRoot),
       (line) => {
         try {
           const text = extractCodexText(JSON.parse(line.trim()))
@@ -199,7 +211,7 @@ export class CliAI implements TextAI {
     let out = ''
     const { code, tail } = await this.runCli(
       ['-p', ...modelArgs],
-      flattenPrompt(messages),
+      flattenPrompt(messages, this.projectRoot),
       (line) => {
         out += line + '\n'
         onDelta(line + '\n')

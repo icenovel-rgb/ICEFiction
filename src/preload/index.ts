@@ -23,6 +23,8 @@ import type {
   LibraryInfo,
   ProjectSummary,
   SaveDocRequest,
+  SearchAllOptions,
+  SearchAllResult,
   TreeNode
 } from '../shared/types'
 
@@ -76,6 +78,8 @@ const api = {
   openPdf: (relPath: string): Promise<void> => ipcRenderer.invoke('pdf:open', relPath),
   convertLegacyEmbeds: (): Promise<{ files: number; embeds: number }> =>
     ipcRenderer.invoke('md:convertEmbeds'),
+  searchAll: (query: string, opts?: SearchAllOptions): Promise<SearchAllResult> =>
+    ipcRenderer.invoke('search:all', query, opts),
   /** 상대 POSIX 경로 → ice-asset:// URL (IPC 불필요, 동기). */
   assetUrl: (relPath: string): string =>
     `ice-asset://asset/${relPath.split('/').map(encodeURIComponent).join('/')}`,
@@ -97,11 +101,14 @@ const api = {
   buildAiContext: (
     currentPath: string | null,
     currentBody: string,
-    includeAssets?: boolean
+    includeAssets?: boolean,
+    includeStyle?: boolean
   ): Promise<import('../shared/types').AIContext> =>
-    ipcRenderer.invoke('ai:buildContext', currentPath, currentBody, includeAssets),
+    ipcRenderer.invoke('ai:buildContext', currentPath, currentBody, includeAssets, includeStyle),
   aiAttachmentInfo: (relPath: string): Promise<import('../shared/types').AIAttachmentInfo> =>
     ipcRenderer.invoke('ai:attachmentInfo', relPath),
+  readAiFiles: (paths: string[]): Promise<import('../shared/types').AIAttachment[]> =>
+    ipcRenderer.invoke('ai:readFiles', paths),
   listAiModels: (
     draft: Pick<AIConfig, 'kind' | 'baseUrl' | 'cliCommand'>,
     apiKey?: string

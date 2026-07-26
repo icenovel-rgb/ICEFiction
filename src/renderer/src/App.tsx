@@ -14,6 +14,7 @@ import { ImageStudio } from './components/ImageStudio'
 import { Inspector } from './components/Inspector'
 import { Library } from './components/Library'
 import { Lightbox } from './components/Lightbox'
+import { SearchPanel } from './components/SearchPanel'
 import { SectionGallery } from './components/SectionGallery'
 import { StatusBar } from './components/StatusBar'
 import { ViewSettings } from './components/ViewSettings'
@@ -91,7 +92,8 @@ function Workspace(): React.ReactElement {
   const patch = useSettings((s) => s.patch)
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
-  const [tab, setTab] = useState<'inspector' | 'assets' | 'ai' | 'view'>('inspector')
+  const [tab, setTab] = useState<'inspector' | 'assets' | 'search' | 'ai' | 'view'>('inspector')
+  const [searchFocusToken, setSearchFocusToken] = useState(0)
 
   // 집중 모드 = 양쪽 패널 접기. Ctrl+\ 로 토글(원고에만 집중해 글쓰기).
   const toggleFocus = (): void => {
@@ -103,6 +105,13 @@ function Workspace(): React.ReactElement {
       if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
         e.preventDefault()
         toggleFocus()
+      }
+      // Ctrl+Shift+F = 책 전체 검색(§6.9) — 패널을 열고 검색 탭 + 입력 포커스(토큰 증가로 재포커스).
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+        e.preventDefault()
+        patch({ rightOpen: true })
+        setTab('search')
+        setSearchFocusToken((t) => t + 1)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -215,6 +224,13 @@ function Workspace(): React.ReactElement {
             <button className={tab === 'assets' ? 'active' : ''} onClick={() => setTab('assets')}>
               자료
             </button>
+            <button
+              className={tab === 'search' ? 'active' : ''}
+              onClick={() => setTab('search')}
+              title="책 전체 검색 (Ctrl+Shift+F)"
+            >
+              검색
+            </button>
             <button className={tab === 'ai' ? 'active' : ''} onClick={() => setTab('ai')}>
               AI
             </button>
@@ -227,6 +243,8 @@ function Workspace(): React.ReactElement {
               <Inspector />
             ) : tab === 'assets' ? (
               <AssetsPanel />
+            ) : tab === 'search' ? (
+              <SearchPanel focusToken={searchFocusToken} />
             ) : tab === 'ai' ? (
               <AiPanel />
             ) : (

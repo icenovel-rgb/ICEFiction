@@ -43,14 +43,24 @@ export function toAnthropicContent(m: ChatMessage): string | Array<Record<string
   return blocks.length ? blocks : m.content
 }
 
-/** CLI·텍스트 전용 — 이미지는 직접 못 보므로 안내, 텍스트 첨부는 인라인으로. */
+/**
+ * CLI·텍스트 전용 — 텍스트 첨부는 인라인으로, 이미지는 **파일 경로**로 넘긴다.
+ *
+ * CLI 에이전트(claude·codex)는 파일을 읽는 도구를 자기가 갖고 있고 이미지도 열어 볼 수 있다.
+ * base64를 프롬프트에 욱여넣는 대신 경로를 주고 "직접 열어 보라"고 하는 편이 정확하고 가볍다.
+ * (--add-dir로 원고 폴더 읽기 권한을 함께 준다 — cli.ts)
+ */
 export function attachmentsToText(m: ChatMessage): string {
   const atts = m.attachments ?? []
   if (atts.length === 0) return m.content
   const extra: string[] = []
   for (const a of atts) {
     if (a.kind === 'image') {
-      extra.push(`[첨부 이미지: ${a.name} — 이 방식(CLI)에서는 이미지를 직접 보지 못합니다]`)
+      extra.push(
+        a.absPath
+          ? `[첨부 이미지: ${a.name} — 파일 경로: ${a.absPath}\n이 파일을 직접 열어(Read) 내용을 확인하세요.]`
+          : `[첨부 이미지: ${a.name} (${a.path}) — 프로젝트 폴더에서 이 파일을 열어 확인하세요.]`
+      )
     } else if (a.text) {
       extra.push(`[첨부 자료: ${a.name}]\n${a.text}`)
     }
