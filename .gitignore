@@ -8,6 +8,13 @@ dist/
 .DS_Store
 Thumbs.db
 
+# macOS 서명·공증 비밀 — 절대 커밋 금지(GitHub Secrets에만 둔다)
+*.p12
+*.p8
+*.cer
+*.certSigningRequest
+AuthKey_*.p8
+
 # 소설 프로젝트 캐시 규약 (§4)
 .ice/
 .thumbs/

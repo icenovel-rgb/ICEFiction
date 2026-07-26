@@ -25,7 +25,8 @@
     "dist:mac": "electron-vite build && electron-builder --mac --publish never",
     "test:aspect": "tsx tests/aspect.test.mts",
     "test:slash": "tsx tests/slash.test.mts",
-    "test:folder:e2e": "node tests/aifolder.e2e.mjs"
+    "test:folder:e2e": "node tests/aifolder.e2e.mjs",
+    "dist:mac:release": "electron-vite build && electron-builder --mac -c.mac.notarize=true --publish never"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

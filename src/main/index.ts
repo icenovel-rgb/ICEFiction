@@ -8,6 +8,7 @@ import { app, BrowserWindow, protocol, net } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { registerIpc } from './ipc'
+import { installAppMenu } from './menu'
 import { libraryService } from './services/library'
 import { projectService } from './services/project'
 
@@ -110,6 +111,7 @@ app.whenReady().then(() => {
     }
   })
 
+  installAppMenu(isDev) // macOS 네이티브 메뉴(Windows/Linux는 현행 유지)
   registerIpc()
   createWindow()
 

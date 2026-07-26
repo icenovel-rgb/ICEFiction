@@ -1,0 +1,92 @@
+# macOS dmg 빌드 — GitHub macOS 러너에서 dmg를 뽑는다.
+# electron-builder의 mac 타깃(dmg·hdiutil·icns 생성)은 macOS 전용이라 반드시 macos 러너에서 돈다.
+#
+# 서명·공증은 조건부다:
+#  · PR·검증 빌드            → 항상 무서명(빠른 확인).
+#  · 태그 push·수동 실행     → Secrets(MAC_CSC_LINK 등)가 있으면 서명+공증, 없으면 무서명.
+# 즉 인증서를 Secrets에 한 번 넣어두면, 이후 버전업은 태그만 밀면 자동으로 서명·공증된다.
+#
+# 필요한 Secrets(최초 1회):
+#   MAC_CSC_LINK           Developer ID Application .p12 를 base64 인코딩한 문자열
+#   MAC_CSC_KEY_PASSWORD   그 .p12 의 비밀번호
+#   APPLE_API_KEY_BASE64   App Store Connect API 키(.p8)를 base64 인코딩한 문자열
+#   APPLE_API_KEY_ID       API 키 ID
+#   APPLE_API_ISSUER       API 이슈어 ID
+name: build-mac
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+  # main 대상 PR에서 mac 빌드가 깨지지 않는지 자동 확인(항상 무서명). mac 러너 2대(arm64·x64)를
+  # 매 PR마다 돌리는 게 부담되면 이 블록만 지우면 된다(수동·태그 트리거는 그대로 유지).
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  dmg:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14 # Apple Silicon
+            arch: arm64
+          - runner: macos-13 # Intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    env:
+      # 서명 자격증명(.p12)이 Secrets에 있는가 — 이후 스텝의 분기 기준.
+      HAS_SIGNING: ${{ secrets.MAC_CSC_LINK != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 타입체크
+        run: npm run typecheck
+
+      - name: 유닛 테스트
+        run: npm test
+
+      # electron-builder는 out/ 번들을 패키징만 한다 — 번들 생성은 electron-vite가 한다.
+      # 이 단계를 빼면 app.asar에 out/main/index.js가 없어 "entry file ... corrupted"로 깨진다.
+      - name: 번들 빌드 (electron-vite)
+        run: npm run build
+
+      # ── 릴리스 경로: 서명 + 공증 (태그/수동 실행 + Secrets 존재 시에만) ──
+      - name: 공증 API 키 복원
+        if: ${{ github.event_name != 'pull_request' && env.HAS_SIGNING == 'true' }}
+        run: |
+          echo "${{ secrets.APPLE_API_KEY_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          echo "APPLE_API_KEY=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
+
+      - name: dmg 빌드 — 서명·공증 (${{ matrix.arch }})
+        if: ${{ github.event_name != 'pull_request' && env.HAS_SIGNING == 'true' }}
+        run: npx electron-builder --mac --${{ matrix.arch }} -c.mac.notarize=true --publish never
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+
+      # ── 검증 경로: 무서명 (PR이거나 Secrets가 없을 때) ──
+      - name: dmg 빌드 — 무서명 (${{ matrix.arch }})
+        if: ${{ github.event_name == 'pull_request' || env.HAS_SIGNING != 'true' }}
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: dmg 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: ICEFiction-mac-${{ matrix.arch }}
+          path: release/*.dmg
+          if-no-files-found: error

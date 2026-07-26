@@ -392,6 +392,50 @@ AI에게 읽히고 싶다")을 3단계 계획으로 처리. 전 단계 증거 �
   제목 합성 → `cover.png` 저장 → 책장 렌더. 실제 그림을 매번 뽑으면 몇 분·사용량이 든다.
 - **실기 확인**: 앱에서 agy로 표지 생성 **77초**, 나눔명조 한글 제목 합성까지 정상.
 
+## 2026-07-16 — macOS 마감: 네이티브 메뉴 · dmg CI (v0.7.1)
+
+코드는 이미 크로스플랫폼(경로·수명주기·CLI PATH 보강)이라 확인만 하면 되는 줄 알았으나, Mac에서만
+드러나는 두 구멍을 실제로 메웠다.
+
+- **네이티브 앱 메뉴**(`src/main/menu.ts`, darwin 전용): 메뉴를 안 주면 Electron이 개발자용 기본
+  메뉴를 그대로 노출한다 — 완성된 Mac 앱답지 않다. App·편집(한글 IME 실행취소/다시실행)·보기·창·
+  도움말을 합성 role로 구성. **Windows/Linux는 손대지 않는다**(이 함수는 darwin이 아니면 즉시 반환).
+  - **이중 줌 버그 차단**: 기본 메뉴 View의 줌 role(Cmd+= · Cmd+- · Cmd+0)이 렌더러의 자체 줌
+    (`window.api.zoomBy`)과 **둘 다 발동**해 한 번에 20%씩 튀었다. 커스텀 메뉴에서 줌 role을 빼
+    렌더러만 줌을 다루게 했다. 보기 메뉴에는 전체화면(Ctrl+Cmd+F)만 남긴다(충돌 없음).
+- **dmg CI**(`.github/workflows/build-mac.yml`): mac 타깃(dmg·hdiutil·icns)은 macOS 전용이라
+  Windows에서 못 만든다. GitHub **macOS 러너**에서 `npm ci → typecheck → test → electron-builder
+  --mac`을 arm64·x64 매트릭스로 돌려 **물리 Mac 없이도** 무서명 dmg를 아티팩트로 뽑는다.
+  `v*` 태그 push 또는 Actions 수동 실행. `CSC_IDENTITY_AUTO_DISCOVERY=false`로 서명 시도 차단.
+
+### 검증 (증거 기반)
+
+- 타입 **0**. 유닛 **57 전부 통과**(mdEmbed 7 · 정렬 13 · 이미지 프롬프트 7 · Project 21 · Library 9).
+- `npm run build` 성공 — 메뉴 추가로 main 번들 80.85kB → 81.93kB, 폰트 8개 정상 번들.
+- ⚠️ dmg 실빌드는 macOS 러너/본체 몫(이 저장소 CI에서 확인) — 리눅스 개발 환경에서는 mac 타깃을
+  만들 수 없다. 코드·설정·파이프라인까지 완료했고, dmg 산출은 Actions 실행으로 검증한다.
+
+## 2026-07-16 (추가) — mac 서명·공증 조건부 배선
+
+애플 개발자 계정 보유 확정 → 배포용 서명·공증을 **미리 배선**한다. 핵심 방침: **최초 1회 인증서
+준비 뒤엔 버전업마다 절차를 다시 밟지 않는다** — Secrets가 그대로 재사용돼 태그만 밀면 자동 서명·공증.
+
+- `build/entitlements.mac.plist`(신규): Hardened Runtime 권한(JIT·unsigned-exec-memory 등) — 공증 전제.
+  Electron V8 JIT 때문에 이 권한이 없으면 서명·공증한 앱이 실행 즉시 죽는다. 무서명 빌드엔 미사용.
+- `electron-builder.yml`: `identity: null` 제거 → **조건부 서명**(인증서 있으면 서명, 없으면 자동 생략).
+  `hardenedRuntime`·`entitlements`·`gatekeeperAssess:false` 추가. 공증은 yml에서 켜지 않고
+  릴리스 경로의 `-c.mac.notarize=true`로만 켠다(자격증명 없이 무조건 공증하면 실패하므로).
+- `package.json`: `dist:mac:release`(신규) = 서명+공증. 기존 `dist:mac`은 서명만/무서명(공증 없음).
+- `.github/workflows/build-mac.yml`: **조건부** — PR·검증은 항상 무서명, 태그/수동 실행은 Secrets
+  (`MAC_CSC_LINK` 등)가 있으면 서명+공증. API 키(.p8)는 base64 Secret에서 러너 임시경로로 복원.
+- `.gitignore`: `*.p12 *.p8 *.cer` 등 서명 비밀 커밋 차단.
+- `docs/BUILD-MAC.md` §8 신설: 최초 1회 준비(인증서·API 키·Secrets) → 이후 버전업은 태그만.
+
+### 검증
+
+- 타입 **0**, 유닛 **57 전부 통과**, `npm run build` 성공(코드 변경 없음 — 빌드 설정·CI·문서만).
+- ⚠️ 서명·공증 실빌드는 인증서가 든 macOS 러너/본체 몫 — 이 환경에선 불가. 배선·설정·문서까지 완료.
+
 ## 2026-07-17 — 찾기·바꾸기 + 책 전체 검색 (v0.8.0, §6.9)
 
 MVP 이후 첫 M2 잔여 해소. 지금까지 에디터에 Ctrl+F조차 없었다(@codemirror/search 미장착).
