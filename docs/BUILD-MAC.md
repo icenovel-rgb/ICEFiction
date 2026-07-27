@@ -165,14 +165,46 @@ npm run dist:mac:release                    # 서명 + 공증
 
 `npm run dist:mac`(공증 없음)은 키체인에 Developer ID가 있으면 **서명만**, 없으면 무서명으로 나온다.
 
-### 8.4 결과 검증
+### 8.4 앱과 dmg는 따로 공증된다 (놓치기 쉬움)
+
+electron-builder의 `mac.notarize`는 **`.app`만** 공증한다. dmg 껍데기는 별개 산출물이라 그대로 두면
+무서명으로 남고, 다운로드한 dmg를 여는 첫 단계에서 Gatekeeper가 막는다
+(`spctl -t open` → `rejected, source=no usable signature`). 안에 든 앱이 공증돼 있어도 그렇다.
+
+그래서 두 가지를 해뒀다.
+
+- `electron-builder.yml`의 **`dmg.sign: true`** — dmg 서명(electron-builder가 처리).
+- CI의 **`dmg 공증·stapling`** 스텝 — 서명된 dmg를 notarytool로 공증하고 티켓을 붙인다.
+
+로컬에서 수동으로 할 때도 dmg는 따로 챙겨야 한다.
 
 ```bash
-spctl -a -vvv --type exec "release/mac/ICEFiction.app"   # accepted, source=Notarized Developer ID
+DMG=release/ICEFiction-<버전>.dmg
+xcrun notarytool submit "$DMG" --key "$APPLE_API_KEY" \
+  --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait
+xcrun stapler staple "$DMG"
+```
+
+### 8.5 결과 검증
+
+앱과 dmg **둘 다** 확인한다. 실제 산출 경로는 `release/mac-arm64/`(Apple Silicon)·`release/mac/`(Intel).
+
+```bash
+# 앱 — 실행 시점
+spctl -a -vvv --type exec "release/mac-arm64/ICEFiction.app"
+xcrun stapler validate "release/mac-arm64/ICEFiction.app"
+
+# dmg — 다운로드해서 여는 시점
+spctl -a -vvv -t open --context context:primary-signature "release/ICEFiction-<버전>.dmg"
 xcrun stapler validate "release/ICEFiction-<버전>.dmg"
 ```
 
-### 8.5 인증서 갱신은 언제?
+넷 다 `accepted, source=Notarized Developer ID` / `The validate action worked!` 가 나와야 한다.
+
+> 공증 소요 시간은 들쭉날쭉하다. 2026-07-27 실측: 앱 첫 제출 **44분**, 직후 dmg 제출 **약 5분**.
+> 첫 제출이 느린 편이니 `In Progress`가 30분 넘게 이어져도 정상이다 — 재제출하면 큐 뒤로 밀려 손해다.
+
+### 8.6 인증서 갱신은 언제?
 
 - **버전업 때는 아무것도 안 해도 된다** — Secrets가 그대로 재사용된다.
 - Developer ID Application 인증서는 유효기간이 길다(약 5년). 만료되면 그때 §8.1의 1·3만 다시 한다.

@@ -77,6 +77,27 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
 
+      # dmg 껍데기 공증 — electron-builder의 notarize는 .app만 처리하므로 dmg는 여기서 따로 한다.
+      # 서명은 electron-builder.yml의 dmg.sign 이 이미 해뒀고, 남은 건 공증 제출과 티켓 stapling.
+      # 이걸 빼면 앱은 공증돼도 다운로드한 dmg를 여는 첫 단계에서 Gatekeeper가 막는다.
+      - name: dmg 공증·stapling (${{ matrix.arch }})
+        if: ${{ github.event_name != 'pull_request' && env.HAS_SIGNING == 'true' }}
+        run: |
+          set -euo pipefail
+          DMG=$(ls release/*.dmg)
+          echo "대상: $DMG"
+          codesign -dv --verbose=2 "$DMG" 2>&1 | grep -q "Developer ID Application" \
+            || { echo "::error::dmg가 서명되지 않았다 — electron-builder.yml의 dmg.sign 확인"; exit 1; }
+          xcrun notarytool submit "$DMG" \
+            --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait
+          xcrun stapler staple "$DMG"
+          echo "── 검증 ──"
+          xcrun stapler validate "$DMG"
+          spctl -a -vvv -t open --context context:primary-signature "$DMG"
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+
       # ── 검증 경로: 무서명 (PR이거나 Secrets가 없을 때) ──
       - name: dmg 빌드 — 무서명 (${{ matrix.arch }})
         if: ${{ github.event_name == 'pull_request' || env.HAS_SIGNING != 'true' }}

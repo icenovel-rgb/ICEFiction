@@ -23,6 +23,11 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   artifactName: ${productName}-${version}.${ext}
+dmg:
+  # dmg 껍데기 자체도 서명한다. electron-builder의 공증(mac.notarize)은 .app만 대상이라,
+  # 이걸 켜지 않으면 앱은 공증돼도 dmg는 무서명으로 남아 `spctl -t open`이 거부한다
+  # (source=no usable signature). 서명 뒤 dmg 공증·stapling은 CI의 별도 스텝이 맡는다.
+  sign: true
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
