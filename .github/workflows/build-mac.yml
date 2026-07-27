@@ -42,6 +42,9 @@ jobs:
           # - runner: macos-15-intel
           #   arch: x64
     runs-on: ${{ matrix.runner }}
+    # 태그 릴리스에 dmg를 첨부하려면 기본 토큰에 쓰기 권한이 필요하다.
+    permissions:
+      contents: write
     env:
       # 서명 자격증명(.p12)이 Secrets에 있는가 — 이후 스텝의 분기 기준.
       HAS_SIGNING: ${{ secrets.MAC_CSC_LINK != '' }}
@@ -111,9 +114,29 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: dmg 업로드
+      - name: dmg 업로드 (Actions 아티팩트 — 90일 보관, 빌드 확인용)
         uses: actions/upload-artifact@v4
         with:
           name: ICEFiction-mac-${{ matrix.arch }}
           path: release/*.dmg
           if-no-files-found: error
+
+      # 태그 릴리스에 dmg를 붙여 "태그 하나로 배포 끝"을 만든다.
+      # 아티팩트(90일 만료·로그인 필요)와 달리 릴리스 에셋은 영구 공개 다운로드다.
+      # 서명·공증을 거친 경우에만 붙인다 — Secrets가 없으면 무서명 dmg가 나오는데
+      # 그게 공개 릴리스로 나가면 안 된다.
+      - name: 릴리스에 dmg 첨부
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && env.HAS_SIGNING == 'true' }}
+        run: |
+          set -euo pipefail
+          DMG=$(ls release/*.dmg)
+          echo "첨부 대상: $DMG → $GITHUB_REF_NAME"
+          # 태그만 밀고 릴리스를 안 만든 경우를 대비해 없으면 만든다.
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "릴리스가 없어 새로 만든다."
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" "$DMG" --clobber
+          gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[] | "첨부됨: \(.name) \(.size) bytes"'
+        env:
+          GH_TOKEN: ${{ github.token }}

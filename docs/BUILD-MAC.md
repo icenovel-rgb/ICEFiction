@@ -98,8 +98,19 @@ xattr -cr /Applications/ICEFiction.app
 `.github/workflows/build-mac.yml` — GitHub **macOS 러너**에서 무서명 dmg를 빌드한다.
 
 - 실행: 저장소 **Actions** 탭 → `build-mac` → **Run workflow**(수동), 또는 `v*` 태그 push 시 자동.
-- 산출: **`arm64`(Apple Silicon) dmg** 가 Actions **아티팩트**로 올라온다.
-- 파이프라인: `npm ci` → `typecheck` → `npm test` → `electron-builder --mac` → dmg 공증·stapling.
+- 파이프라인: `npm ci` → `typecheck` → `npm test` → `electron-builder --mac` → dmg 공증·stapling → 업로드.
+- 산출: **`arm64`(Apple Silicon) dmg**. 올라가는 곳이 두 군데이고 성격이 다르다.
+
+| | Actions 아티팩트 | 릴리스 에셋 |
+|---|---|---|
+| 언제 | 모든 실행 | **`v*` 태그 push + Secrets 있을 때만** |
+| 보관 | 90일 후 삭제 | 영구 |
+| 접근 | GitHub 로그인 필요 | 링크만으로 누구나 |
+| 용도 | 빌드 확인 | 배포 |
+
+릴리스 첨부는 **서명·공증을 거친 경우에만** 한다(`HAS_SIGNING` 조건). Secrets가 없으면 무서명
+dmg가 나오는데 그게 공개 릴리스로 나가면 안 되기 때문이다. 해당 태그의 릴리스가 아직 없으면
+`--generate-notes`로 만들고 붙인다.
 
 > **Intel(x64)은 매트릭스에서 뺐다.** `macos-13` 라벨이 GitHub 러너 목록에서 사라져 그 잡에
 > 러너가 배정되지 않고 `queued`로 방치된다(2026-07-26 실행이 14시간 넘게 대기, 같은 실행의
