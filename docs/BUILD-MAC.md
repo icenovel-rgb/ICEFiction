@@ -101,11 +101,14 @@ xattr -cr /Applications/ICEFiction.app
 - 산출: **`arm64`(Apple Silicon) dmg** 가 Actions **아티팩트**로 올라온다.
 - 파이프라인: `npm ci` → `typecheck` → `npm test` → `electron-builder --mac` → dmg 공증·stapling.
 
-> **Intel(x64)은 매트릭스에서 뺐다.** GitHub이 `macos-13` 러너를 퇴역시켜 그 잡이 배정되지 않고
-> 무한 대기한다(2026-07-26 실행이 14시간 넘게 `queued`로 남았고, arm64 잡은 그 사이 성공했다).
-> `fail-fast: false`라 arm64는 나오지만 워크플로 전체가 끝나지 않는다. Intel이 다시 필요하면
-> 워크플로의 주석 처리된 항목을 지원되는 러너 라벨(`macos-15` 등)로 되살리거나,
-> arm64 러너에서 `--universal`로 통합 바이너리를 뽑는다(용량 2배).
+> **Intel(x64)은 매트릭스에서 뺐다.** `macos-13` 라벨이 GitHub 러너 목록에서 사라져 그 잡에
+> 러너가 배정되지 않고 `queued`로 방치된다(2026-07-26 실행이 14시간 넘게 대기, 같은 실행의
+> arm64 잡은 그 사이 성공). `fail-fast: false`라 arm64 산출물은 나오지만 워크플로 전체가
+> 끝나지 않아 릴리스가 완료 표시되지 않는다.
+>
+> Intel이 다시 필요하면 워크플로의 주석 처리된 항목을 되살린다. **라벨 주의 — `macos-15`는
+> ARM64다.** Intel 러너는 `-intel` 접미사가 붙는다(2026-07 기준 `macos-15-intel`·`macos-26-intel`).
+> 한 파일로 끝내고 싶으면 arm64 러너에서 `--universal`로 통합 바이너리를 뽑아도 된다(용량 2배).
 
 로컬 Mac에서 직접 빌드하려면 아래 §7(구 §6) 그대로 `npm run dist:mac`.
 
