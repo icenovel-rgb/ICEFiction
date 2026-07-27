@@ -98,8 +98,14 @@ xattr -cr /Applications/ICEFiction.app
 `.github/workflows/build-mac.yml` — GitHub **macOS 러너**에서 무서명 dmg를 빌드한다.
 
 - 실행: 저장소 **Actions** 탭 → `build-mac` → **Run workflow**(수동), 또는 `v*` 태그 push 시 자동.
-- 산출: `arm64`(Apple Silicon)·`x64`(Intel) dmg가 Actions **아티팩트**로 올라온다.
-- 파이프라인: `npm ci` → `typecheck` → `npm test` → `electron-builder --mac`.
+- 산출: **`arm64`(Apple Silicon) dmg** 가 Actions **아티팩트**로 올라온다.
+- 파이프라인: `npm ci` → `typecheck` → `npm test` → `electron-builder --mac` → dmg 공증·stapling.
+
+> **Intel(x64)은 매트릭스에서 뺐다.** GitHub이 `macos-13` 러너를 퇴역시켜 그 잡이 배정되지 않고
+> 무한 대기한다(2026-07-26 실행이 14시간 넘게 `queued`로 남았고, arm64 잡은 그 사이 성공했다).
+> `fail-fast: false`라 arm64는 나오지만 워크플로 전체가 끝나지 않는다. Intel이 다시 필요하면
+> 워크플로의 주석 처리된 항목을 지원되는 러너 라벨(`macos-15` 등)로 되살리거나,
+> arm64 러너에서 `--universal`로 통합 바이너리를 뽑는다(용량 2배).
 
 로컬 Mac에서 직접 빌드하려면 아래 §7(구 §6) 그대로 `npm run dist:mac`.
 

@@ -33,8 +33,12 @@ jobs:
         include:
           - runner: macos-14 # Apple Silicon
             arch: arm64
-          - runner: macos-13 # Intel
-            arch: x64
+          # Intel(x64)은 뺐다. GitHub이 macos-13 러너를 퇴역시켜 잡이 배정되지 않고 무한 대기한다
+          # (2026-07-26 실행이 14시간 넘게 queued로 남았고, arm64는 그 사이 성공했다).
+          # 배포 대상이 Apple Silicon뿐이라 실익도 없다. Intel이 다시 필요하면 러너를 macos-15 등
+          # 지원되는 라벨로 바꿔 아래 항목을 되살리거나, arm64 러너에서 --universal 로 뽑는다.
+          # - runner: macos-15
+          #   arch: x64
     runs-on: ${{ matrix.runner }}
     env:
       # 서명 자격증명(.p12)이 Secrets에 있는가 — 이후 스텝의 분기 기준.
