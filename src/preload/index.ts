@@ -58,6 +58,11 @@ const api = {
   reorderBooks: (orderedIds: string[]): Promise<LibraryInfo> =>
     ipcRenderer.invoke('library:reorder', orderedIds),
   revealLibrary: (): Promise<void> => ipcRenderer.invoke('library:reveal'),
+  // ── 업데이트 확인(§9.1) ──
+  checkUpdate: (): Promise<import('../shared/types').UpdateInfo> =>
+    ipcRenderer.invoke('update:check'),
+  openExternal: (url: string): Promise<void> => ipcRenderer.invoke('os:openExternal', url),
+  appVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
   // ── 열린 책 ──
   refreshTree: (): Promise<TreeNode[]> => ipcRenderer.invoke('project:refreshTree'),
   readDoc: (path: string): Promise<DocContent> => ipcRenderer.invoke('doc:read', path),

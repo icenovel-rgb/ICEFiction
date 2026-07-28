@@ -4,7 +4,7 @@
  * 렌더러는 파일시스템에 직접 접근하지 않는다(contextIsolation). 모든 IO는 여기를 거친다 —
  * 보안 + Mac 이식성(BLUEPRINT §5). 서재/책장은 LibraryService, 열린 책은 ProjectService.
  */
-import { BrowserWindow, dialog, ipcMain, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, type WebContents } from 'electron'
 import { promises as fsp } from 'node:fs'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -21,6 +21,7 @@ import { imageService } from './ai/image'
 import { aiService } from './services/ai'
 import { COVER_ART, libraryService } from './services/library'
 import { projectService } from './services/project'
+import { updateService } from './services/update'
 
 export function registerIpc(): void {
   // ── 서재(책장) ──
@@ -80,6 +81,20 @@ export function registerIpc(): void {
 
   ipcMain.handle('library:reveal', async () => {
     await shell.openPath(await libraryService.libraryDir())
+  })
+
+  // ── 업데이트 확인(§9.1) ──
+  ipcMain.handle('app:version', async () => app.getVersion())
+
+  ipcMain.handle('update:check', async () => updateService.check(app.getVersion()))
+
+  // 다운로드는 **기본 브라우저**로 넘긴다 — 앱이 설치 파일을 직접 받아 실행하지 않는다.
+  // 무엇을 받는지 사용자가 브라우저에서 보고 판단하게 두는 편이 안전하다.
+  ipcMain.handle('os:openExternal', async (_e, url: string) => {
+    if (!/^https:\/\/(github\.com|api\.github\.com|objects\.githubusercontent\.com|icenovel\.com)\//i.test(url)) {
+      throw new Error(`허용되지 않는 링크입니다: ${url}`)
+    }
+    await shell.openExternal(url)
   })
 
   // ── 열린 책 ──

@@ -309,8 +309,31 @@ export interface AIErrorEvent {
   message: string
 }
 
+// ── 업데이트 확인(BLUEPRINT §9.1) ──
+
+/** GitHub 릴리스에 직접 물어본 결과. checked=false면 확인 자체가 실패한 것(조용히 넘긴다). */
+export interface UpdateInfo {
+  /** 확인이 실제로 성공했는가(네트워크·API 실패면 false). */
+  checked: boolean
+  hasUpdate: boolean
+  current: string
+  latest?: string
+  /** 이 플랫폼에서 받을 파일의 직접 링크(없으면 릴리스 페이지). */
+  url?: string
+  pageUrl: string
+  sizeBytes?: number
+  date?: string
+  notes?: string
+}
+
 /** IPC 표면. preload가 contextBridge로 window.api에 노출한다. */
 export interface IceApi {
+  /** 새 버전이 나왔는지 GitHub 릴리스에 직접 확인한다(§9.1). 실패해도 조용히 넘어간다. */
+  checkUpdate(): Promise<UpdateInfo>
+  /** 기본 브라우저로 다운로드 페이지·파일을 연다(앱이 직접 설치하지 않는다). */
+  openExternal(url: string): Promise<void>
+  /** 지금 실행 중인 앱 버전. */
+  appVersion(): Promise<string>
   // ── 서재(책장) ──
   getLibrary(): Promise<LibraryInfo>
   chooseLibraryDir(): Promise<LibraryInfo | null> // 폴더 선택 → 서재 경로 변경

@@ -17,6 +17,7 @@ import { Lightbox } from './components/Lightbox'
 import { SearchPanel } from './components/SearchPanel'
 import { SectionGallery } from './components/SectionGallery'
 import { StatusBar } from './components/StatusBar'
+import { UpdateBar } from './components/UpdateBar'
 import { ViewSettings } from './components/ViewSettings'
 import { useAi } from './state/ai'
 import { useStore } from './state/store'
@@ -90,6 +91,7 @@ export function App(): React.ReactElement {
   return (
     <>
       {project ? <Workspace /> : <Library />}
+      <UpdateBar />
       <DialogHost />
       <AssetPicker />
       <ImageStudio />
