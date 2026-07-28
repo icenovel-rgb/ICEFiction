@@ -15,6 +15,7 @@
  *
  * 이 파일은 순수 함수만 담는다 — 그대로 단위 테스트한다.
  */
+import { paragraphAt } from './slashCommands'
 
 /**
  * 삽화 비율(§7.6). 엔진이 실제로 만들어 주는 크기는 셋뿐인 경우가 많으므로(gpt-image: 1:1·2:3·3:2),
@@ -114,6 +115,51 @@ export function positiveForbiddenWord(prompt: string): string | null {
   return null
 }
 
+/** 커서 기준 장면 발췌의 기본 예산(글자). 프롬프트 한 덩이로 적당한 길이. */
+export const SCENE_CAP = 900
+
+/**
+ * **커서가 있는 자리**의 장면을 뽑는다(§7.6) — 그림은 "지금 쓰고 있는 문단"을 그려야 한다.
+ *
+ * 예전에는 문서 맨 앞 600자를 썼다. 20장짜리 챕터 한가운데서 삽화를 불러도 첫 문단 이야기를
+ * 그려 주는 셈이라 쓸모가 없었다(사용자 지적). 이제 커서가 놓인 문단을 **끝점**으로 잡고,
+ * 거기서 앞으로 거슬러 예산만큼 담는다.
+ *
+ * 잘린 앞머리는 문단 경계에서 시작하도록 다듬는다 — 문장 중간에서 시작하면 모델이 엉뚱한
+ * 주어를 지어낸다.
+ */
+export function sceneAtCursor(body: string, cursor: number, cap = SCENE_CAP): string {
+  const doc = body ?? ''
+  if (!doc.trim()) return ''
+  const pos = Math.max(0, Math.min(cursor, doc.length))
+  // 커서가 놓인 문단의 끝까지 담는다(문단 한가운데 커서 → 그 문단 전체가 장면이다).
+  // 다만 **커서보다 한참 앞서 나가지는 않는다** — 빈 줄 없이 길게 쓴 원고에서는 문단 하나가
+  // 수천 자일 수 있는데, 그때 문단 끝을 따라가면 커서에서 멀리 떨어진 대목을 그리게 된다.
+  const para = paragraphAt(doc, pos)
+  const end = para ? Math.min(para.to, pos + FORWARD_CAP) : pos
+  const head = doc.slice(Math.max(0, end - cap), end)
+  // 예산에 걸려 잘렸으면 앞을 깔끔한 경계로 정리한다 — 문장 중간에서 시작하면 모델이 없는 주어를 지어낸다.
+  if (end - cap > 0) {
+    const para = head.indexOf('\n\n') // ① 문단 경계가 있으면 거기서
+    if (para >= 0 && head.length - (para + 2) > MIN_SCENE) return head.slice(para + 2).trim()
+    const sentence = sentenceStart(head) // ② 문단 하나가 예산보다 길면 문장 경계에서라도
+    if (sentence > 0 && head.length - sentence > MIN_SCENE) return head.slice(sentence).trim()
+  }
+  return head.trim()
+}
+
+/** 앞을 잘라 낸 뒤 남아야 할 최소 길이 — 이보다 짧아지면 차라리 문장 중간부터 다 주는 게 낫다. */
+const MIN_SCENE = 120
+
+/** 커서보다 뒤로 더 담을 수 있는 최대 길이 — 문단 끝까지 담되 이만큼까지만. */
+const FORWARD_CAP = 400
+
+/** 첫 문장이 끝나는 자리(그 다음 글자의 위치). 없으면 0. */
+function sentenceStart(text: string): number {
+  const m = /[.!?。…」』”"'](\s+)/.exec(text)
+  return m ? m.index + m[0].length : 0
+}
+
 export interface DocPromptInput {
   /** 문서 제목(인물 이름 등) */
   name: string
@@ -121,8 +167,10 @@ export interface DocPromptInput {
   type?: string
   /** 시놉시스·한 줄 요약 */
   synopsis?: string
-  /** 본문에서 뽑은 묘사(앞부분) */
+  /** 본문 전체(커서 기준으로 발췌한다) */
   body?: string
+  /** 커서 위치(본문 오프셋). 없으면 문서 앞부분으로 떨어진다. */
+  cursor?: number
   /** 별칭·호칭 */
   aliases?: string[]
 }
@@ -136,8 +184,12 @@ export function draftDocPrompt(input: DocPromptInput): string {
 
   const parts: string[] = [lead]
   if (input.synopsis?.trim()) parts.push(input.synopsis.trim())
-  const body = (input.body ?? '').trim()
-  if (body) parts.push(body.slice(0, 600))
+  // 커서를 알면 그 자리의 장면을, 모르면 예전처럼 문서 앞부분을 쓴다.
+  const body =
+    input.cursor != null
+      ? sceneAtCursor(input.body ?? '', input.cursor)
+      : (input.body ?? '').trim().slice(0, 600)
+  if (body) parts.push(body)
   if (isCharacter) {
     parts.push(
       'Photorealistic, cinematic lighting, shallow depth of field. Face clearly visible.'

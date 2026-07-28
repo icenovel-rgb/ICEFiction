@@ -18,7 +18,9 @@ const KNOWN_KEYS = new Set([
   'order',
   'words_target',
   'aliases',
-  'images'
+  'images',
+  'cover',
+  'cover_art'
 ])
 
 export function parseDoc(raw: string): { frontmatter: Frontmatter; body: string } {
@@ -57,6 +59,12 @@ export function parseDoc(raw: string): { frontmatter: Frontmatter; body: string 
       case 'images':
         if (Array.isArray(value)) fm.images = value.map(String).filter(Boolean)
         break
+      case 'cover':
+        fm.cover = value == null ? undefined : String(value)
+        break
+      case 'cover_art':
+        fm.coverArt = value == null ? undefined : String(value)
+        break
       default:
         extra[key] = value
     }
@@ -76,6 +84,8 @@ export function stringifyDoc(frontmatter: Frontmatter, body: string): string {
   if (frontmatter.wordsTarget != null) data.words_target = frontmatter.wordsTarget
   if (frontmatter.aliases && frontmatter.aliases.length > 0) data.aliases = frontmatter.aliases
   if (frontmatter.images && frontmatter.images.length > 0) data.images = frontmatter.images
+  if (frontmatter.cover != null) data.cover = frontmatter.cover
+  if (frontmatter.coverArt != null) data.cover_art = frontmatter.coverArt
   // 보존해 둔 미지 키 복원(알려진 키가 우선).
   if (frontmatter.extra) {
     for (const [k, v] of Object.entries(frontmatter.extra)) {

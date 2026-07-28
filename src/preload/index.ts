@@ -83,6 +83,18 @@ const api = {
   /** 상대 POSIX 경로 → ice-asset:// URL (IPC 불필요, 동기). */
   assetUrl: (relPath: string): string =>
     `ice-asset://asset/${relPath.split('/').map(encodeURIComponent).join('/')}`,
+  saveDocCover: (docPath: string, base64Png: string): Promise<string> =>
+    ipcRenderer.invoke('doc:setCover', docPath, base64Png),
+  removeDocCover: (docPath: string): Promise<void> =>
+    ipcRenderer.invoke('doc:removeCover', docPath),
+  /**
+   * 표지 그림을 <canvas>로 읽을 URL. **ice-asset이 아니라 ice-cover** — ice-asset에는
+   * corsEnabled 권한이 없어 crossOrigin을 붙이면 로드가 깨지고, 안 붙이면 캔버스가 오염돼
+   * toDataURL()이 SecurityError로 막힌다(§7.6 실측). 둘은 한 쌍이라 스킴을 바꿔 푼다.
+   */
+  docCoverUrl: (relPath: string, version?: number): string =>
+    `ice-cover://doc/${relPath.split('/').map(encodeURIComponent).join('/')}` +
+    (version ? `?v=${version}` : ''),
   /** 드래그드롭한 File의 실제 절대경로(webUtils). */
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
 

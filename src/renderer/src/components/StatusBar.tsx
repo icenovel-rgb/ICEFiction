@@ -11,12 +11,9 @@ export function StatusBar(): React.ReactElement {
   const dirty = useStore((s) => s.dirty)
   const saving = useStore((s) => s.saving)
   const sessionStartChars = useStore((s) => s.sessionStartChars)
-  const wordsTarget = useStore((s) => s.frontmatter.wordsTarget)
 
   const counts = useMemo(() => countText(body), [body])
   const sessionDelta = counts.withSpaces - sessionStartChars
-  const targetPct =
-    wordsTarget && wordsTarget > 0 ? Math.round((counts.withoutSpaces / wordsTarget) * 100) : null
 
   const saveLabel = saving ? '저장 중…' : dirty ? '● 미저장' : '저장됨'
 
@@ -39,7 +36,6 @@ export function StatusBar(): React.ReactElement {
           이번 세션 {sessionDelta >= 0 ? '+' : ''}
           {sessionDelta.toLocaleString('ko')}자
         </span>
-        {targetPct != null && <span>목표 {targetPct}%</span>}
         <span className={dirty ? 'sb-dirty' : 'sb-saved'}>{saveLabel}</span>
       </div>
     </div>

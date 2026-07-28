@@ -43,15 +43,19 @@ function runCommand(view: EditorView, cmd: SlashCommand, from: number, to: numbe
     return
   }
 
-  void useAi.getState().runInline(
-    cmd,
-    {
-      before: beforeText(doc, from),
-      selection: range ? doc.slice(range.from, range.to) : '',
-      title: activePath ?? ''
-    },
-    range ?? { from, to: from }
-  )
+  const ctx = {
+    before: beforeText(doc, from),
+    selection: range ? doc.slice(range.from, range.to) : '',
+    title: activePath ?? ''
+  }
+  const target = range ?? { from, to: from }
+
+  // 한 줄 지시를 받는 명령이면 바로 보내지 않고 입력 막대를 띄운다(비우고 Enter면 그대로 실행 §6.1b).
+  if (cmd.ask) {
+    useAi.getState().askInline(cmd, ctx, target)
+    return
+  }
+  void useAi.getState().runInline(cmd, ctx, target)
 }
 
 /** 목록 한 줄에 덧붙이는 작은 조각(아이콘·꼬리표). 우리 명령이 아니면 아무것도 그리지 않는다. */

@@ -152,6 +152,24 @@ function markHideDecos(view: EditorView, add: (from: number, to: number, d: Deco
   }
 }
 
+// ── 빈 줄 표시 ──
+// 문단 간격(§8.1)은 `.cm-line`의 아래 여백으로 준다. 그런데 마크다운 원고에는 문단 사이에 빈 줄이
+// 이미 있어서, 빈 줄에도 여백이 붙으면 기존 원고가 두 배로 벌어진다. 빈 줄만 표시해 여백을 0으로 되돌린다.
+const blankLine = Decoration.line({ class: 'cm-blank-line' })
+
+function blankLineDecos(view: EditorView, addLine: (lineFrom: number) => void): void {
+  const doc = view.state.doc
+  for (const { from, to } of view.visibleRanges) {
+    let pos = from
+    for (;;) {
+      const line = doc.lineAt(pos)
+      if (line.length === 0) addLine(line.from)
+      if (line.to >= to || line.to >= doc.length) break
+      pos = line.to + 1
+    }
+  }
+}
+
 // ── 인용 블록(Blockquote) 라인 렌더 ── 좌측 바 + 들여쓰기(.cm-blockquote). 커서 여부와 무관하게 표시.
 const quoteLine = Decoration.line({ class: 'cm-blockquote' })
 
@@ -257,6 +275,7 @@ function buildDecorations(view: EditorView): DecorationSet {
   hrDecos(view, push)
   imageDecos(view, push)
   blockquoteDecos(view, (lineFrom) => ranges.push(quoteLine.range(lineFrom)))
+  blankLineDecos(view, (lineFrom) => ranges.push(blankLine.range(lineFrom)))
   // 정렬 블록은 여기 넣지 않는다 — block 데코라 StateField(alignField)로 따로 제공한다.
   return Decoration.set(ranges, true)
 }

@@ -13,7 +13,8 @@ import {
   draftDocPrompt,
   NO_TEXT_CONSTRAINT,
   oneLinePrompt,
-  positiveForbiddenWord
+  positiveForbiddenWord,
+  sceneAtCursor
 } from '../src/shared/imagePrompt'
 
 let pass = 0
@@ -103,6 +104,56 @@ function ok(label: string): void {
   const p = draftDocPrompt({ name: '아무개', type: 'character', body: long })
   assert(p.length < 1200, `본문이 그대로 다 들어감(길이 ${p.length})`)
   ok('본문 길이 상한 — 프롬프트 비대화 방지')
+}
+
+// 7) ★커서 자리의 장면을 뽑는다 — 문서 맨 앞이 아니라 "지금 쓰고 있는 문단"이어야 한다
+{
+  const doc = ['첫 문단. 여기는 프롤로그다.', '가운데 문단. 비가 내린다.', '마지막 문단. 문이 닫혔다.'].join(
+    '\n\n'
+  )
+  const cursor = doc.indexOf('비가') // 가운데 문단 한복판
+  const scene = sceneAtCursor(doc, cursor)
+  assert(scene.includes('비가 내린다'), `커서가 놓인 문단이 안 실림: ${scene}`)
+  assert(!scene.includes('문이 닫혔다'), '커서 뒤 문단까지 실림(장면은 커서까지다)')
+  ok('커서 장면 — 커서가 놓인 문단을 통째로 담는다')
+}
+
+// 8) 커서를 넘기면 프롬프트가 그 자리 기준으로 바뀐다(회귀: 예전엔 늘 문서 앞 600자였다)
+{
+  const doc = '가'.repeat(2000) + '\n\n여기가 지금 쓰는 자리다.'
+  const withCursor = draftDocPrompt({ name: '3장', body: doc, cursor: doc.length })
+  const without = draftDocPrompt({ name: '3장', body: doc })
+  assert(withCursor.includes('여기가 지금 쓰는 자리다'), '커서 자리 문단이 프롬프트에 없음')
+  assert(!without.includes('여기가 지금 쓰는 자리다'), '커서를 안 줬는데 문서 뒷부분이 실림')
+  ok('회귀 — 커서를 주면 그 자리, 안 주면 예전처럼 문서 앞부분')
+}
+
+// 9) 예산 상한 + 잘린 앞머리는 문단 경계에서 시작한다(문장 중간 시작 금지)
+{
+  const head = '앞 문단.'.repeat(50)
+  const doc = `${head}\n\n${'뒷 문단이다. '.repeat(60)}`
+  const scene = sceneAtCursor(doc, doc.length, 300)
+  assert(scene.length <= 300, `예산을 넘김(${scene.length}자)`)
+  assert(scene.startsWith('뒷 문단이다.'), `문장 중간에서 시작함: ${scene.slice(0, 20)}`)
+  ok('커서 장면 — 예산 상한 + 문단 경계에서 시작')
+}
+
+// 9b) 빈 줄 없이 길게 쓴 원고 — 문단 끝을 무작정 따라가지 않는다(커서 근처를 그려야 한다)
+{
+  const doc = '앞머리다. ' + '중간 문장이다. '.repeat(200) + '아주 먼 끝 대목이다.'
+  const scene = sceneAtCursor(doc, 5) // 커서는 맨 앞
+  assert(scene.includes('앞머리다'), '커서 자리가 안 실림')
+  assert(!scene.includes('아주 먼 끝 대목'), `커서에서 한참 떨어진 대목이 실림: ${scene.slice(-40)}`)
+  ok('커서 장면 — 긴 한 문단에서도 커서 근처만')
+}
+
+// 10) 경계값 — 빈 문서·범위 밖 커서에도 터지지 않는다
+{
+  assert.equal(sceneAtCursor('', 0), '')
+  assert.equal(sceneAtCursor('   \n\n  ', 3), '')
+  assert(sceneAtCursor('한 문단뿐이다.', 999).includes('한 문단뿐이다.'), '범위 밖 커서 처리 실패')
+  assert(sceneAtCursor('한 문단뿐이다.', -5).includes('한 문단뿐이다.'), '음수 커서 처리 실패')
+  ok('커서 장면 — 빈 문서·범위 밖 커서 안전')
 }
 
 console.log(`\n✅ 이미지 프롬프트: ${pass}개 검증 통과`)

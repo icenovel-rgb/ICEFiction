@@ -8,7 +8,8 @@ import {
   beforeText,
   findCommand,
   paragraphAt,
-  SLASH_COMMANDS
+  SLASH_COMMANDS,
+  withInstruction
 } from '../src/shared/slashCommands'
 
 let pass = 0
@@ -79,5 +80,43 @@ assert.equal(paragraphAt(gap, 6), null, '빈 줄에서는 null')
 assert.deepEqual(paragraphAt(gap, 8), { from: 8, to: 12 }, '뒤 문단 첫 글자에서는 그 문단')
 assert.equal(paragraphAt('', 0), null)
 ok('빈 줄에서는 대상을 잡지 않는다')
+
+// 8) ★한 줄 지시 — 넣으면 요청문 끝에 붙고, 안 넣으면 아무것도 붙지 않는다(§6.1b)
+{
+  const asking = SLASH_COMMANDS.filter((c) => c.ask)
+  assert.deepEqual(
+    asking.map((c) => c.id).sort(),
+    ['continue', 'describe', 'dialogue', 'polish'],
+    '지시를 받는 명령이 네 개(이어쓰기·다듬기·묘사·대사)가 아님'
+  )
+  for (const cmd of asking) {
+    assert.ok(cmd.ask!.title && cmd.ask!.placeholder, `${cmd.label}: 입력 막대 문구가 비었다`)
+    const base = { before: '앞 본문', selection: '고칠 문단', title: 'manuscript/01.md' }
+    const bare = cmd.build!(base)
+    const told = cmd.build!({ ...base, instruction: '비가 그치고 형사가 돌아온다' })
+    assert.ok(told.includes('비가 그치고 형사가 돌아온다'), `${cmd.label}: 지시가 안 실림`)
+    assert.ok(told.startsWith(bare), `${cmd.label}: 지시가 기존 요청문을 바꿔치기함`)
+    assert.ok(told.trimEnd().endsWith('비가 그치고 형사가 돌아온다'), `${cmd.label}: 지시가 끝이 아님`)
+    assert.equal(cmd.build!({ ...base, instruction: '   ' }), bare, `${cmd.label}: 빈 지시가 붙었다`)
+    assert.equal(cmd.build!(base), bare, `${cmd.label}: 지시 없이도 결과가 달라졌다`)
+  }
+  ok('한 줄 지시 — 있으면 요청문 끝에, 없거나 공백이면 그대로')
+}
+
+// 9) 지시를 받지 않는 명령(/줄거리·/삽화)은 입력 막대를 띄우지 않는다
+{
+  assert.equal(findCommand('synopsis')!.ask, undefined, '/줄거리는 지시를 묻지 않는다')
+  assert.equal(findCommand('image')!.ask, undefined, '/삽화는 그림 창에서 프롬프트를 고친다')
+  ok('줄거리·삽화는 지시를 묻지 않는다')
+}
+
+// 10) 문체 지침을 덮어쓰라는 뜻이 아님을 지시 블록이 스스로 밝힌다(§7.2a 우선순위 유지)
+{
+  const p = withInstruction('요청문', '더 짧게')
+  assert.ok(p.includes('작가 지시'), '지시 블록 표지가 없음')
+  assert.ok(p.includes('문체 지침'), '문체 지침 우선 안내가 없음')
+  assert.equal(withInstruction('요청문', undefined), '요청문')
+  ok('지시 블록 — 문체 지침 우선을 함께 못박는다')
+}
 
 console.log(`\n슬래시 명령 테스트 ${pass}개 통과`)

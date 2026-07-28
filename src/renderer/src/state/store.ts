@@ -15,6 +15,7 @@ import type {
   ProjectSummary,
   TreeNode
 } from '../../../shared/types'
+import { useSession } from './session'
 
 const AUTOSAVE_MS = 2000
 
@@ -32,7 +33,7 @@ interface State {
    * 한다 — 먼저 세우면 Editor가 옛 문서에 선택을 찍는다(계획 리스크 '점프 타이밍'). Editor가
    * 본문 교체 effect **다음에 선언된** effect에서 소비하고 null로 되돌린다.
    */
-  pendingJump: { from: number; to: number } | null
+  pendingJump: { from: number; to: number; scrollTop?: number } | null
   frontmatter: Frontmatter
   body: string
   dirty: boolean
@@ -106,6 +107,25 @@ export const useStore = create<State>((set, get) => {
       dirty: false
     })
     void get().loadAssets()
+    void restoreSpot(summary)
+  }
+
+  /**
+   * 마지막에 쓰던 문서·커서로 돌아간다(§6.1). 기억이 없거나 그 문서가 사라졌으면 조용히
+   * 원고 갤러리에 머문다 — 복원 실패가 책 열기를 막아서는 안 된다.
+   */
+  async function restoreSpot(summary: ProjectSummary): Promise<void> {
+    const spot = useSession.getState().recall(summary.absolutePath)
+    if (!spot) return
+    try {
+      await get().selectDoc(spot.path)
+    } catch {
+      useSession.getState().forget(summary.absolutePath) // 지워진 문서는 기억에서도 지운다
+      set({ galleryPath: 'manuscript' })
+      return
+    }
+    // 본문이 store에 실린 **뒤에만** 위치를 예약한다 — 순서가 정확성의 전부다(검색 점프와 같은 규칙).
+    set({ pendingJump: { from: spot.anchor, to: spot.head, scrollTop: spot.scrollTop } })
   }
 
   return {

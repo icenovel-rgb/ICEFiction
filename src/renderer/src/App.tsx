@@ -18,6 +18,7 @@ import { SearchPanel } from './components/SearchPanel'
 import { SectionGallery } from './components/SectionGallery'
 import { StatusBar } from './components/StatusBar'
 import { ViewSettings } from './components/ViewSettings'
+import { useAi } from './state/ai'
 import { useStore } from './state/store'
 import { applySettings, useSettings } from './state/settings'
 
@@ -30,6 +31,21 @@ export function App(): React.ReactElement {
   useEffect(() => {
     void loadLibrary()
   }, [loadLibrary])
+
+  /**
+   * AI 자동 연결(§7.3) — 지난번에 쓰던 프로바이더로 앱이 알아서 붙는다.
+   *
+   * 설정은 전부터 저장되고 있었지만 **아무도 연결 확인을 부르지 않아서**, 켤 때마다 "연결 안 됨"으로
+   * 보이고 설정 폼이 강제로 펼쳐졌다(사용자 지적). 여기서 한 번만 확인한다 — AI 패널을 열지 않아도
+   * 슬래시 명령이 바로 되도록 앱 껍데기에서 돈다. 실패해도 저장된 설정은 그대로 두고(말없이 기본값으로
+   * 되돌리지 않는다), 패널이 사유와 함께 '기본값으로 되돌리기'를 제안한다.
+   */
+  useEffect(() => {
+    void (async () => {
+      await useAi.getState().loadConfig()
+      await useAi.getState().check()
+    })()
+  }, [])
 
   // 설정을 CSS 변수로 반영(테마·글꼴·줄번호). 변경 시마다 즉시 적용.
   useEffect(() => {

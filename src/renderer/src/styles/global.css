@@ -452,27 +452,43 @@ textarea {
   overflow-y: auto;
   padding: 6px 0 20px;
 }
+/*
+ * 섹션 = 서랍. 구분선과 넉넉한 여백으로 **떼어 놓아야** 그 아래 줄들이 어느 섹션 소속인지 보인다.
+ * (예전엔 11px 대문자 라벨이라 문서 줄과 굵기가 비슷해 계층이 뭉개졌다 — 사용자 지적)
+ */
 .binder-section-block {
-  margin-bottom: 10px;
+  margin-bottom: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.binder-section-block:first-child {
+  padding-top: 2px;
+  border-top: none;
 }
 .binder-section {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px 4px;
+  padding: 2px 8px 6px;
 }
 /* 섹션 이름 = 갤러리 열기 버튼(§6.2) */
 .binder-section-label {
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 1px;
-  color: var(--muted);
-  text-transform: uppercase;
+  letter-spacing: 0.2px;
+  color: var(--text);
   background: transparent;
   border: none;
-  border-radius: 4px;
-  padding: 2px 6px;
+  border-radius: 5px;
+  padding: 3px 7px;
   cursor: pointer;
+}
+.binder-section-glyph {
+  font-size: 13px;
+  color: var(--accent-hi);
 }
 .binder-section-label:hover {
   background: rgba(255, 255, 255, 0.07);
@@ -483,6 +499,11 @@ textarea {
 }
 :root[data-app-mode='light'] .binder-section-label:hover {
   background: rgba(0, 0, 0, 0.06);
+}
+.binder-empty {
+  padding: 3px 12px 2px;
+  font-size: 11.5px;
+  color: var(--muted);
 }
 .binder-section-tools {
   display: flex;
@@ -554,12 +575,31 @@ textarea {
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
+  font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
 }
+/* 폴더 = 칸막이. 아이콘 + 약간 굵은 글씨로 문서 줄과 구분한다. */
 .binder-dir {
   color: #cdd0d6;
+  font-weight: 600;
+}
+.binder-folder-icon {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+/*
+ * 폴더 안 내용을 세로 안내선으로 묶어 어디까지가 그 폴더인지 보이게.
+ * 들여쓰기는 여기서만 준다 — 중첩될수록 이 감싸개가 겹쳐 쌓여 자연스럽게 계단이 된다.
+ */
+.binder-children {
+  margin-left: 15px;
+  border-left: 1px solid var(--border);
+}
+:root[data-app-mode='light'] .binder-dir {
+  color: var(--text);
 }
 .binder-dir:hover,
 .binder-file:hover {
@@ -843,7 +883,14 @@ textarea {
   border-radius: 8px;
   border: 1px solid var(--border);
   font-size: 16px;
-  text-align: center;
+  line-height: 1.7;
+}
+/* 문단 간격·첫 줄 모양을 그대로 보여 주는 미리보기 문단(여백은 인라인 스타일이 준다). */
+.vs-preview-p {
+  margin: 0;
+}
+.vs-preview-p:last-child {
+  margin-bottom: 0 !important;
 }
 
 /* ── 상태바 ── */
@@ -1603,7 +1650,8 @@ textarea {
   color: var(--text);
   font-size: 13px;
 }
-.insp-gen-image {
+.insp-gen-image,
+.insp-gen-cover {
   margin-top: 8px;
   width: 100%;
   padding: 8px;
@@ -1612,10 +1660,26 @@ textarea {
   color: #cfcbff;
   border-radius: 6px;
   font-size: 12px;
+  cursor: pointer;
 }
-.insp-gen-image:hover {
+.insp-gen-image:hover,
+.insp-gen-cover:hover {
   background: var(--accent);
   color: #fff;
+}
+/* 문서 표지 썸네일 — 갤러리 카드와 같은 3:4 비율로 보여 준다(카드에서 어떻게 보일지 그대로). */
+.insp-cover {
+  position: relative;
+  width: 96px;
+  margin-top: 6px;
+}
+.insp-cover img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  display: block;
+  border: 1px solid var(--border);
+  cursor: pointer;
 }
 
 /* ── 라이트박스 ── */
@@ -2494,6 +2558,44 @@ textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/*
+ * 슬래시 명령의 한 줄 지시 입력(§6.1b) — 제안 막대와 같은 자리·같은 모양이라 눈이 옮겨 다니지 않는다.
+ * 입력칸이 들어가므로 알약보다 넓게 잡고, 폭은 본문 폭을 넘지 않게 둔다.
+ */
+.slash-ask {
+  width: min(640px, calc(100% - 32px));
+}
+/* 연결 실패 시에만 나오는 되돌리기 — 눈에 띄되 주 동작(저장 + 연결 확인)을 가리지 않게 수수하게. */
+.ai-reset-default {
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px;
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ai-reset-default:hover {
+  background: var(--btn-hover);
+  color: var(--text);
+}
+.slash-ask-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 4px 10px;
+  border: 1px solid var(--btn-border);
+  border-radius: 999px;
+  background: var(--input-bg, var(--btn-bg));
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: inherit;
+}
+.slash-ask-input:focus {
+  outline: none;
+  border-color: var(--accent-hi);
 }
 .ghost-bar-what b {
   color: var(--accent-hi);

@@ -4,9 +4,11 @@
  */
 import {
   effectiveColors,
+  firstLineOffsets,
   FONTS,
   THEMES,
   useSettings,
+  type FirstLineMode,
   type TextAlign,
   type ThemeKey
 } from '../state/settings'
@@ -28,6 +30,13 @@ function applyAlign(align: BlockAlign | null): void {
   if (!view) return
   alignSelection(view, align)
 }
+
+/** 문단 첫 줄 모양 — 들여쓰기와 내어쓰기는 같은 축이라 셋 중 하나만 고른다(§8.1). */
+const FIRSTLINE_OPTIONS: { value: FirstLineMode; label: string; glyph: string; hint: string }[] = [
+  { value: 'none', label: '없음', glyph: '▤', hint: '첫 줄도 나머지 줄과 나란히' },
+  { value: 'indent', label: '들여쓰기', glyph: '↦', hint: '첫 줄만 안으로 — 소설 조판의 기본' },
+  { value: 'hang', label: '내어쓰기', glyph: '↤', hint: '첫 줄만 밖으로, 나머지 줄이 안으로' }
+]
 
 /** 마크다운 문법 치트시트 — 원고는 표준 .md로 저장되므로 어디서든 통하는 문법(§6.1). */
 const MD_ROWS: { code: string; desc: string }[] = [
@@ -169,6 +178,61 @@ export function ViewSettings(): React.ReactElement {
       </div>
 
       <div className="vs-field">
+        <span>
+          문단 간격 — {s.paraGapEm.toFixed(1)}em
+          {s.paraGapEm === 0 && ' (없음)'}
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={2}
+          step={0.1}
+          value={s.paraGapEm}
+          onChange={(e) => s.patch({ paraGapEm: Number(e.target.value) })}
+        />
+        <span className="insp-hint">
+          문단 사이가 벌어집니다 — 빈 줄을 넣으려고 엔터를 두 번 치지 않아도 됩니다.
+        </span>
+      </div>
+
+      <div className="vs-field">
+        <span>문단 첫 줄</span>
+        <div className="vs-align vs-align-doc">
+          {FIRSTLINE_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              className={s.firstLineMode === o.value ? 'active' : ''}
+              onClick={() => s.patch({ firstLineMode: o.value })}
+              title={o.hint}
+            >
+              <span className="vs-align-glyph">{o.glyph}</span>
+              {o.label}
+            </button>
+          ))}
+        </div>
+        {s.firstLineMode !== 'none' && (
+          <label className="vs-field">
+            <span>
+              {s.firstLineMode === 'indent' ? '들여쓰기' : '내어쓰기'} 폭 —{' '}
+              {s.firstLineEm.toFixed(1)}em
+            </span>
+            <input
+              type="range"
+              min={0.5}
+              max={3}
+              step={0.5}
+              value={s.firstLineEm}
+              onChange={(e) => s.patch({ firstLineEm: Number(e.target.value) })}
+            />
+          </label>
+        )}
+        <span className="insp-hint">
+          보기 설정입니다 — 원고 파일에는 공백이 들어가지 않습니다. 실제 글자로 넣으려면 Tab(전각
+          공백 한 칸)을 쓰세요.
+        </span>
+      </div>
+
+      <div className="vs-field">
         <span>선택한 부분만 정렬 — 드래그로 고른 문단</span>
         <div className="vs-align vs-align-sel">
           {ALIGN_OPTIONS.map((o) => (
@@ -218,10 +282,31 @@ export function ViewSettings(): React.ReactElement {
         )}
       </div>
 
-      <div className="vs-preview" style={{ background: colors.bg, color: colors.text }}>
-        <span style={{ fontFamily: FONTS.find((f) => f.key === s.fontKey)?.stack }}>
-          비가 쏟아지기 시작했다.
-        </span>
+      {/* 미리보기 — 글꼴·정렬만이 아니라 문단 간격·첫 줄 모양까지 그대로 보여 준다(설정과 결과가 같은 화면). */}
+      <div
+        className="vs-preview"
+        style={{
+          background: colors.bg,
+          color: colors.text,
+          fontFamily: FONTS.find((f) => f.key === s.fontKey)?.stack,
+          textAlign: s.textAlign
+        }}
+      >
+        {['비가 쏟아지기 시작했다. 그는 처마 밑으로 몸을 붙였다.', '멀리서 자동차 한 대가 지나갔다.'].map(
+          (line) => (
+            <p
+              key={line}
+              className="vs-preview-p"
+              style={{
+                marginBottom: `${s.paraGapEm}em`,
+                textIndent: firstLineOffsets(s).indent,
+                paddingLeft: firstLineOffsets(s).pad
+              }}
+            >
+              {line}
+            </p>
+          )
+        )}
       </div>
 
       <MarkdownHelp />

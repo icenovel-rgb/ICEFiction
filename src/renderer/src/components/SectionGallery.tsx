@@ -6,18 +6,12 @@
  * 이건 책 안에서 인물·장면을 고르는 화면이다.
  */
 import { useMemo, useState } from 'react'
-import type { DocType, TreeNode } from '../../../shared/types'
+import type { TreeNode } from '../../../shared/types'
 import { useStore } from '../state/store'
 import { assetUrl } from '../lib/media'
 import { openPrompt } from '../ui/dialogs'
-
-const SECTION_LABEL: Record<string, string> = {
-  manuscript: '원고',
-  characters: '캐릭터',
-  world: '세계관',
-  notes: '노트',
-  style: '문체'
-}
+import { coverImgUrl, useImageStudio } from '../ui/imageStudio'
+import { SECTION_LABEL, SECTION_TYPE, TYPE_GLYPH } from '../lib/sections'
 
 const SECTION_HINT: Record<string, string> = {
   manuscript: '챕터를 눌러 이어 쓰세요.',
@@ -28,25 +22,7 @@ const SECTION_HINT: Record<string, string> = {
     '문체지침에 적은 규칙은 AI의 모든 요청에 항상 실립니다. samples 폴더에 기존 원고를 넣으면 그 문체를 따라 씁니다.'
 }
 
-/** 섹션 폴더 → 새 문서의 기본 타입(바인더의 SECTION_TYPE과 같은 표). */
-const SECTION_TYPE: Record<string, DocType> = {
-  manuscript: 'chapter',
-  characters: 'character',
-  world: 'world',
-  notes: 'note',
-  style: 'style'
-}
-
 const STATUS_LABEL: Record<string, string> = { draft: '초고', revising: '퇴고 중', done: '완료' }
-
-/** 문서 타입별 기본 표지 글리프(이미지가 없을 때). */
-const TYPE_GLYPH: Record<string, string> = {
-  chapter: '✎',
-  character: '☺',
-  world: '🜨',
-  note: '✦',
-  style: '✍'
-}
 
 /** 트리에서 경로에 해당하는 노드를 찾는다. */
 function findNode(nodes: TreeNode[], path: string): TreeNode | null {
@@ -80,13 +56,16 @@ function collect(node: TreeNode): { docs: TreeNode[]; folders: TreeNode[] } {
 
 function Card({ node }: { node: TreeNode }): React.ReactElement {
   const selectDoc = useStore((s) => s.selectDoc)
+  const coverVersion = useImageStudio((s) => s.coverVersion)
   const glyph = TYPE_GLYPH[node.type] ?? '✦'
+  // 문서 표지(§7.6)가 있으면 그것을, 없으면 첨부 이미지 첫 장을 표지로 쓴다.
+  const cover = node.cover ? coverImgUrl(node.cover, coverVersion) : node.image ? assetUrl(node.image) : ''
 
   return (
     <button className="gal-card" onClick={() => void selectDoc(node.path)} title={node.path}>
       <div className="gal-cover">
-        {node.image ? (
-          <img className="gal-cover-img" src={assetUrl(node.image)} alt="" draggable={false} />
+        {cover ? (
+          <img className="gal-cover-img" src={cover} alt="" draggable={false} />
         ) : (
           <span className="gal-cover-glyph">{glyph}</span>
         )}

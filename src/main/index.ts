@@ -37,6 +37,16 @@ protocol.registerSchemesAsPrivileged([
   }
 ])
 
+/** 열린 책 안의 표지 그림 절대경로. 프로젝트가 없거나 경로가 수상하면 null(핸들러가 404). */
+function docCoverAbsPath(rel: string): string | null {
+  if (!projectService.rootDir || !rel) return null
+  try {
+    return projectService.resolve(rel)
+  } catch {
+    return null
+  }
+}
+
 function createWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
@@ -87,18 +97,23 @@ app.whenReady().then(() => {
   })
 
   // ice-cover://book/<id> → 완성된 표지(제목 포함), ice-cover://art/<id> → AI가 그린 원본 아트(글자 없음).
+  // ice-cover://doc/<프로젝트 상대경로> → 문서(챕터) 표지 아트. 열린 책 안의 파일이지만 **ice-asset이
+  //   아니라 여기로 서빙한다** — 캔버스 조판(toDataURL)에는 corsEnabled + ACAO 헤더가 한 쌍으로
+  //   필요한데 그 조합이 검증된 스킴이 여기뿐이다(§7.6 실측).
   // 열린 책이 없어도 서재 화면에서 서빙된다. ?v=<mtime>은 캐시버스트.
   protocol.handle('ice-cover', async (request) => {
     try {
       const url = new URL(request.url)
-      if (url.host !== 'book' && url.host !== 'art') {
+      if (url.host !== 'book' && url.host !== 'art' && url.host !== 'doc') {
         return new Response('bad request', { status: 400 })
       }
       const id = decodeURIComponent(url.pathname).replace(/^\/+/, '')
       const abs =
-        url.host === 'art'
-          ? await libraryService.coverArtAbsPath(id)
-          : await libraryService.coverAbsPath(id)
+        url.host === 'doc'
+          ? docCoverAbsPath(id) // `..` 탈출은 projectService.resolve가 차단
+          : url.host === 'art'
+            ? await libraryService.coverArtAbsPath(id)
+            : await libraryService.coverAbsPath(id)
       if (!abs) return new Response('not found', { status: 404 })
       const res = await net.fetch(pathToFileURL(abs).toString())
       // CORS 허용이 **필수**다. 표지 아트를 <canvas>에 그린 뒤 toDataURL()로 내보내는데,

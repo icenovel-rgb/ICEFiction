@@ -39,6 +39,16 @@ export function fontStack(key: string): string {
 /** 문단 정렬 — 원고 본문 text-align(§8.1). 기본은 양쪽 정렬(justify). */
 export type TextAlign = 'left' | 'center' | 'right' | 'justify'
 
+/**
+ * 문단 첫 줄 모양(§8.1).
+ *  · none   그대로
+ *  · indent 들여쓰기 — 첫 줄만 안으로(소설 조판의 기본)
+ *  · hang   내어쓰기 — 첫 줄만 밖으로, 나머지 줄이 안으로(대사·목록형 원고)
+ *
+ * 둘은 같은 text-indent 축이라 **동시에 켤 수 없다** → 모드 하나 + 크기 하나로 묶는다.
+ */
+export type FirstLineMode = 'none' | 'indent' | 'hang'
+
 interface SettingsState {
   showLineNumbers: boolean
   appMode: AppMode
@@ -51,6 +61,12 @@ interface SettingsState {
   lineHeight: number
   /** 원고 문단 정렬(좌/가운데/우/양쪽). 기본 양쪽 정렬. */
   textAlign: TextAlign
+  /** 문단과 문단 사이 간격(em). 이게 있으면 빈 줄을 넣지 않아도 문단이 떨어져 보인다(§8.1). */
+  paraGapEm: number
+  /** 문단 첫 줄 모양 — 없음/들여쓰기/내어쓰기. */
+  firstLineMode: FirstLineMode
+  /** 들여쓰기·내어쓰기 폭(em). */
+  firstLineEm: number
   /** 사용자가 직접 고른 색(있으면 프리셋 색을 덮음). 프리셋 바꾸면 초기화. */
   customBg: string | null
   customText: string | null
@@ -72,6 +88,9 @@ export const useSettings = create<SettingsState>()(
       fontSizePx: 17,
       lineHeight: 1.9,
       textAlign: 'justify', // 소설 기본은 양쪽 정렬(반듯한 판면)
+      paraGapEm: 0.7, // 엔터를 두 번 치지 않아도 문단이 갈라져 보이는 최소한
+      firstLineMode: 'none',
+      firstLineEm: 1,
       customBg: null,
       customText: null,
 
@@ -129,5 +148,25 @@ export function applySettings(s: SettingsState): void {
   root.setProperty('--paper-fontsize', `${s.fontSizePx}px`)
   root.setProperty('--paper-lineheight', String(s.lineHeight))
   root.setProperty('--paper-align', s.textAlign ?? 'justify')
+  // 문단 모양(§8.1) — 간격은 줄 아래 여백으로, 첫 줄 모양은 text-indent(+내어쓰기면 왼쪽 여백)로.
+  root.setProperty('--paper-para-gap', `${s.paraGapEm ?? 0}em`)
+  const first = firstLineOffsets(s)
+  root.setProperty('--paper-indent', first.indent)
+  root.setProperty('--paper-hang-pad', first.pad)
   root.setProperty('--gutter-display', s.showLineNumbers ? 'flex' : 'none')
+}
+
+/**
+ * 첫 줄 모양을 CSS 두 값으로 바꾼다.
+ *  · 들여쓰기 = text-indent 양수
+ *  · 내어쓰기 = text-indent 음수 + 같은 크기의 왼쪽 여백(그래야 첫 줄만 밖으로 나가고 판면은 유지된다)
+ */
+export function firstLineOffsets(s: Pick<SettingsState, 'firstLineMode' | 'firstLineEm'>): {
+  indent: string
+  pad: string
+} {
+  const em = s.firstLineEm ?? 0
+  if (s.firstLineMode === 'indent') return { indent: `${em}em`, pad: '0px' }
+  if (s.firstLineMode === 'hang') return { indent: `-${em}em`, pad: `${em}em` }
+  return { indent: '0px', pad: '0px' }
 }

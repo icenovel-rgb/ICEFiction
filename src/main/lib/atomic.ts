@@ -9,12 +9,14 @@ import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { promises as fs } from 'node:fs'
 
-export async function writeFileAtomic(filePath: string, data: string): Promise<void> {
+/** 텍스트(.md·JSON)와 바이너리(PNG 표지) 모두 받는다 — 인코딩은 문자열일 때만 지정한다. */
+export async function writeFileAtomic(filePath: string, data: string | Uint8Array): Promise<void> {
   const dir = dirname(filePath)
   await fs.mkdir(dir, { recursive: true })
   const tmp = join(dir, `.tmp-${randomBytes(6).toString('hex')}`)
   try {
-    await fs.writeFile(tmp, data, 'utf8')
+    if (typeof data === 'string') await fs.writeFile(tmp, data, 'utf8')
+    else await fs.writeFile(tmp, data)
     await fs.rename(tmp, filePath)
   } catch (err) {
     // 실패 시 temp 잔여물 정리(성공하면 rename으로 사라짐).

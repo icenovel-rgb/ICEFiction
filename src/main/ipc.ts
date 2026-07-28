@@ -103,6 +103,17 @@ export function registerIpc(): void {
     projectService.renameEntry(path, newName)
   )
 
+  // 문서(챕터) 표지 — 제목까지 얹은 완성본은 렌더러가 캔버스로 만들어 넘긴다(§7.6).
+  // 프론트매터(cover/cover_art) 기록은 렌더러가 자동 저장으로 한다 — main이 같은 파일을
+  // 동시에 고치면 편집 중인 본문과 경합한다.
+  ipcMain.handle('doc:setCover', async (_e, docPath: string, base64Png: string) =>
+    projectService.saveDocCover(docPath, base64Png)
+  )
+
+  ipcMain.handle('doc:removeCover', async (_e, docPath: string) =>
+    projectService.removeDocCover(docPath)
+  )
+
   ipcMain.handle('os:reveal', async (_e, path: string) => {
     shell.showItemInFolder(projectService.resolve(path))
   })
@@ -231,6 +242,12 @@ async function runImageGeneration(req: ImageGenRequest, sender: WebContents): Pr
       destAbs = join(folder, COVER_ART)
       relOrName = COVER_ART
       url = `ice-cover://art/${encodeURIComponent(req.target.bookId)}`
+    } else if (req.target.kind === 'docCover') {
+      // 문서 표지 아트(글자 없음) — 렌더러가 제목을 얹어 doc:setCover로 완성본을 저장한다.
+      const { art } = projectService.coverPathsFor(req.target.path)
+      destAbs = projectService.resolve(art)
+      relOrName = art
+      url = docCoverUrl(art)
     } else {
       const root = projectService.rootDir
       if (!root) throw new Error('열린 프로젝트가 없습니다')
@@ -261,6 +278,8 @@ async function runImageGeneration(req: ImageGenRequest, sender: WebContents): Pr
     if (req.target.kind === 'cover') {
       await libraryService.noteCoverArt(req.target.bookId)
       url = `${url}?v=${Date.now()}` // 캐시버스트 — 다시 그리면 새 그림이 보여야 한다
+    } else if (req.target.kind === 'docCover') {
+      url = `${url}?v=${Date.now()}`
     }
 
     if (!sender.isDestroyed()) {
@@ -275,6 +294,11 @@ async function runImageGeneration(req: ImageGenRequest, sender: WebContents): Pr
   } finally {
     imageJobs.delete(req.requestId)
   }
+}
+
+/** 표지 그림을 캔버스로 읽을 수 있는 URL(CORS 허용 스킴 — preload의 docCoverUrl과 같은 규칙). */
+function docCoverUrl(rel: string): string {
+  return `ice-cover://doc/${rel.split('/').map(encodeURIComponent).join('/')}`
 }
 
 /** 자료 파일명 안전화(경로 주입 방지). */

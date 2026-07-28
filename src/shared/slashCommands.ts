@@ -16,6 +16,16 @@ export interface SlashContext {
   selection: string
   /** 현재 문서 제목(표시용) */
   title: string
+  /** 작가가 그 자리에서 덧붙인 한 줄 지시(비어 있을 수 있다 — §6.1b). */
+  instruction?: string
+}
+
+/** 명령을 고른 뒤 한 줄 지시를 받는 입력 막대의 문구. */
+export interface SlashAsk {
+  /** 입력 막대에 뜨는 물음 */
+  title: string
+  /** 입력칸 안내 문구(예시) */
+  placeholder: string
 }
 
 export interface SlashCommand {
@@ -37,6 +47,11 @@ export interface SlashCommand {
    * `/`를 치는 순간 선택이 지워지므로(에디터 기본 동작), 대상은 커서가 있는 문단으로 잡는다.
    */
   replaces?: boolean
+  /**
+   * 실행 전에 작가에게 한 줄 지시를 받는다(§6.1b). 비워 두고 Enter면 지시 없이 그대로 실행한다 —
+   * "넣을 수도 있고 넣지 않을 수도 있게"가 요점이라 **입력을 강제하지 않는다**.
+   */
+  ask?: SlashAsk
   /** AI에 보낼 지시문(image는 쓰지 않는다) */
   build?: (ctx: SlashContext) => string
 }
@@ -57,6 +72,17 @@ export const BEFORE_CAP = 1200
 const PLAIN =
   '설명·머리말·따옴표·마크다운 표시 없이, 원고에 그대로 이어붙일 **본문만** 출력하세요.'
 
+/**
+ * 작가가 덧붙인 한 줄 지시를 요청문 **맨 끝**에 붙인다 — 실제 과제 바로 옆에 둬야 모델이 흘리지 않는다.
+ * 지시가 비어 있으면 아무것도 붙이지 않는다(없는 요구를 지어내게 만들지 않기 위해).
+ * 문체 지침은 여전히 최우선이다(§7.2a) — 지시는 '무엇을 쓸지'이지 '어떤 문체로 쓸지'가 아니다.
+ */
+export function withInstruction(prompt: string, instruction?: string): string {
+  const t = (instruction ?? '').trim()
+  if (!t) return prompt
+  return `${prompt}\n\n[작가 지시 — 이 내용대로 쓸 것(문체 지침은 그대로 지킨다)]\n${t}`
+}
+
 export const SLASH_COMMANDS: SlashCommand[] = [
   {
     id: 'continue',
@@ -65,8 +91,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     icon: '✍',
     outcome: 'Tab 확정',
     kind: 'ghost',
+    ask: { title: '어떻게 이어쓸까요?', placeholder: '예: 비가 그치고 형사가 돌아온다' },
     build: (c) =>
-      `아래는 지금 쓰고 있는 원고의 커서 직전 부분입니다. 여기서 자연스럽게 이어서 2~4문단을 쓰세요.\n${PLAIN}\n\n[커서 직전]\n${c.before}`
+      withInstruction(
+        `아래는 지금 쓰고 있는 원고의 커서 직전 부분입니다. 여기서 자연스럽게 이어서 2~4문단을 쓰세요.\n${PLAIN}\n\n[커서 직전]\n${c.before}`,
+        c.instruction
+      )
   },
   {
     id: 'polish',
@@ -76,8 +106,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     outcome: 'Tab 확정',
     kind: 'ghost',
     replaces: true,
+    ask: { title: '어떻게 다듬을까요?', placeholder: '예: 더 짧고 건조하게' },
     build: (c) =>
-      `다음 부분을 다듬어 주세요. 뜻과 사건은 그대로 두고 문장만 자연스럽게 고칩니다.\n${PLAIN}\n\n[원문]\n${c.selection}`
+      withInstruction(
+        `다음 부분을 다듬어 주세요. 뜻과 사건은 그대로 두고 문장만 자연스럽게 고칩니다.\n${PLAIN}\n\n[원문]\n${c.selection}`,
+        c.instruction
+      )
   },
   {
     id: 'describe',
@@ -86,8 +120,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     icon: '🌿',
     outcome: 'Tab 확정',
     kind: 'ghost',
+    ask: { title: '무엇을 묘사할까요?', placeholder: '예: 골목의 냄새와 빗소리' },
     build: (c) =>
-      `아래 장면에 이어질 묘사를 1~2문단 쓰세요. 소리·냄새·촉감 중 하나는 반드시 넣고, 인물의 감정을 직접 말하지 말고 행동과 배경으로 드러내세요.\n${PLAIN}\n\n[커서 직전]\n${c.selection || c.before}`
+      withInstruction(
+        `아래 장면에 이어질 묘사를 1~2문단 쓰세요. 소리·냄새·촉감 중 하나는 반드시 넣고, 인물의 감정을 직접 말하지 말고 행동과 배경으로 드러내세요.\n${PLAIN}\n\n[커서 직전]\n${c.selection || c.before}`,
+        c.instruction
+      )
   },
   {
     id: 'dialogue',
@@ -96,8 +134,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     icon: '💬',
     outcome: 'Tab 확정',
     kind: 'ghost',
+    ask: { title: '어떤 대사를 원하나요?', placeholder: '예: 서로 속내를 숨기는 대화' },
     build: (c) =>
-      `아래 상황에 이어질 인물들의 대사를 쓰세요. 큰따옴표를 쓰고, 대사 사이 지문은 짧게. 인물의 말투는 맥락의 인물 시트를 따르세요.\n${PLAIN}\n\n[커서 직전]\n${c.selection || c.before}`
+      withInstruction(
+        `아래 상황에 이어질 인물들의 대사를 쓰세요. 큰따옴표를 쓰고, 대사 사이 지문은 짧게. 인물의 말투는 맥락의 인물 시트를 따르세요.\n${PLAIN}\n\n[커서 직전]\n${c.selection || c.before}`,
+        c.instruction
+      )
   },
   {
     id: 'synopsis',

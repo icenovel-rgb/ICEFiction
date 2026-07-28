@@ -1,34 +1,26 @@
 /**
- * 바인더 — 좌측 문서 트리(BLUEPRINT §6.2). 섹션(원고/캐릭터/세계관/노트) 재귀 렌더.
+ * 바인더 — 좌측 문서 트리(BLUEPRINT §6.2). 섹션(원고/캐릭터/세계관/노트/문체) 재귀 렌더.
  * 문서 추가 + 카테고리(폴더) 추가. 세계관 카테고리는 사용자가 직접 만든다(기본 제공 없음).
+ *
+ * **계층이 눈에 보여야 한다.** 서랍장에 비유하면 섹션은 서랍, 폴더는 칸막이, 문서는 서류다.
+ * 셋이 같은 크기·같은 색으로 늘어서 있으면 어디가 어디인지 알 수 없다(사용자 지적) → 섹션은
+ * 크고 굵게 + 구분선으로 떼어 놓고, 폴더는 아이콘과 왼쪽 안내선으로 묶음임을 드러내고,
+ * 문서는 평범하게 둔다. 정렬도 **문서 먼저, 폴더 나중**이라 섹션의 알맹이가 맨 위에 온다
+ * (문체지침이 [문체] 바로 아래 — main의 sortNodes).
  */
 import { useState } from 'react'
-import type { DocType, TreeNode } from '../../../shared/types'
+import type { TreeNode } from '../../../shared/types'
 import { useStore } from '../state/store'
 import { openConfirm, openPrompt } from '../ui/dialogs'
-
-const SECTION_LABEL: Record<string, string> = {
-  manuscript: '원고',
-  characters: '캐릭터',
-  world: '세계관',
-  notes: '노트',
-  style: '문체'
-}
-
-const SECTION_TYPE: Record<string, DocType> = {
-  manuscript: 'chapter',
-  characters: 'character',
-  world: 'world',
-  notes: 'note',
-  style: 'style'
-}
+import {
+  folderLabelOf,
+  SECTION_GLYPH,
+  SECTION_LABEL,
+  SECTION_TYPE,
+  sectionOf
+} from '../lib/sections'
 
 const STATUS_LABEL: Record<string, string> = { draft: '초', revising: '퇴', done: '완' }
-
-/** 경로의 최상위 섹션(문서 타입 결정용). */
-function sectionOf(path: string): string {
-  return path.split('/')[0]
-}
 
 function useRowActions(node: TreeNode): {
   onRename: (e: React.MouseEvent) => Promise<void>
@@ -90,10 +82,9 @@ function Row({ node, depth }: { node: TreeNode; depth: number }): React.ReactEle
       if (title) await createDoc(node.path, SECTION_TYPE[sectionOf(node.path)] ?? 'note', title)
     }
     return (
-      <div>
+      <div className="binder-folder">
         <div
           className="binder-row binder-dir"
-          style={{ paddingLeft: 8 + depth * 14 }}
           onClick={() => setOpen((v) => !v)}
           onContextMenu={(e) => {
             e.preventDefault()
@@ -101,13 +92,24 @@ function Row({ node, depth }: { node: TreeNode; depth: number }): React.ReactEle
           }}
         >
           <span className="binder-caret">{open ? '▾' : '▸'}</span>
+          <span className="binder-folder-icon">🗀</span>
           <span className="binder-name">{node.name}</span>
           <button className="binder-row-add" onClick={onAddInside} title="여기에 문서 추가">
             +
           </button>
           <RowTools node={node} />
         </div>
-        {open && node.children?.map((c) => <Row key={c.path} node={c} depth={depth + 1} />)}
+        {/*
+          안내선(왼쪽 세로줄) — 어디까지가 이 폴더의 내용인지 눈으로 잡아 준다.
+          들여쓰기는 **이 감싸개가 전부 책임진다**(줄마다 depth를 곱해 더하면 이중으로 밀린다).
+        */}
+        {open && node.children && node.children.length > 0 && (
+          <div className="binder-children">
+            {node.children.map((c) => (
+              <Row key={c.path} node={c} depth={depth + 1} />
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -115,7 +117,6 @@ function Row({ node, depth }: { node: TreeNode; depth: number }): React.ReactEle
   return (
     <div
       className={`binder-row binder-file${isActive ? ' active' : ''}`}
-      style={{ paddingLeft: 8 + depth * 14 }}
       onClick={() => void selectDoc(node.path)}
       onContextMenu={(e) => {
         e.preventDefault()
@@ -136,7 +137,7 @@ function SectionHeader({ node }: { node: TreeNode }): React.ReactElement {
   const openGallery = useStore((s) => s.openGallery)
   const galleryPath = useStore((s) => s.galleryPath)
   const label = SECTION_LABEL[node.path] ?? node.name
-  const folderLabel = node.path === 'manuscript' ? '부' : '카테고리'
+  const folderLabel = folderLabelOf(node.path)
   const isOpen = galleryPath === node.path
 
   async function onAddDoc(e: React.MouseEvent): Promise<void> {
@@ -168,6 +169,7 @@ function SectionHeader({ node }: { node: TreeNode }): React.ReactElement {
         onClick={() => openGallery(node.path)}
         title={`${label} 전체를 카드로 보기`}
       >
+        <span className="binder-section-glyph">{SECTION_GLYPH[node.path] ?? '✦'}</span>
         {label}
       </button>
       <div className="binder-section-tools">
@@ -198,6 +200,9 @@ export function Binder(): React.ReactElement {
           <div key={section.path} className="binder-section-block">
             <SectionHeader node={section} />
             {section.children?.map((c) => <Row key={c.path} node={c} depth={0} />)}
+            {(section.children?.length ?? 0) === 0 && (
+              <div className="binder-empty">비어 있음 — 오른쪽 <b>+</b>로 만드세요</div>
+            )}
           </div>
         ))}
       </div>

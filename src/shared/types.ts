@@ -35,6 +35,13 @@ export interface Frontmatter {
   aliases?: string[]
   /** 이 문서에 첨부된 이미지·자료(프로젝트 루트 기준 상대 POSIX 경로) — 캐릭터 얼굴 레퍼런스 등(§6.10). */
   images?: string[]
+  /**
+   * 이 문서의 표지(제목까지 얹은 완성본, 루트 기준 상대 POSIX). 챕터 표지 등 — 책 표지와 같은 방식(§7.6).
+   * 갤러리 카드가 이 그림을 표지로 쓴다(images 첫 장보다 우선).
+   */
+  cover?: string
+  /** 표지의 원본 아트(글자 없음). 제목만 다시 얹을 때 재생성 없이 재사용한다. */
+  coverArt?: string
   /** 파서가 모르는 필드는 손실 없이 여기 보존해 저장 시 되돌려 쓴다. */
   extra?: Record<string, unknown>
 }
@@ -52,6 +59,8 @@ export interface TreeNode {
   aliases?: string[] // 캐릭터·설정 별칭 — 컨텍스트 자동 감지용(§7.2)
   /** 대표 이미지(프론트매터 images의 첫 장, 루트 기준 상대 POSIX) — 섹션 갤러리의 표지로 쓴다. */
   image?: string
+  /** 문서 표지(프론트매터 cover) — 있으면 갤러리에서 image보다 먼저 쓴다. */
+  cover?: string
   children?: TreeNode[]
 }
 
@@ -251,6 +260,7 @@ export interface ImageEngineInfo {
 export type ImageTarget =
   | { kind: 'doc'; path: string } // 문서(캐릭터·장소…) 첨부 이미지 → 프론트매터 images
   | { kind: 'cover'; bookId: string } // 책 표지 아트(글자 없음) → 제목은 앱이 얹는다
+  | { kind: 'docCover'; path: string } // 문서(챕터) 표지 아트(글자 없음) → 제목은 앱이 얹는다
   | { kind: 'inline'; path: string } // 본문 삽화(/삽화) → 커서 자리에 ![](경로)로 삽입
 
 export interface ImageGenRequest {
@@ -337,6 +347,16 @@ export interface IceApi {
   importAssets(): Promise<string[]> // 파일 선택창으로 이미지·자료 반입 → 반입된 상대경로
   listAssets(): Promise<AssetItem[]>
   assetUrl(relPath: string): string
+  /** 문서 표지(제목까지 얹은 완성본)를 저장 — assets/covers/<문서명>.png. 반환 = 루트 기준 상대 경로. */
+  saveDocCover(docPath: string, base64Png: string): Promise<string>
+  /** 문서 표지·원본 아트 파일을 지운다(프론트매터 해제는 렌더러가 한다). */
+  removeDocCover(docPath: string): Promise<void>
+  /**
+   * 표지 아트를 <canvas>로 읽을 수 있는 URL. **ice-asset이 아니라 ice-cover 스킴**을 쓴다 —
+   * ice-asset은 corsEnabled가 없어 crossOrigin을 붙이면 로드가 깨지고, 안 붙이면 캔버스가
+   * 오염돼 toDataURL()이 막힌다(§7.6 실측).
+   */
+  docCoverUrl(relPath: string, version?: number): string
   /** PDF를 Chromium 내장 뷰어 창으로 연다(§6.10). */
   openPdf(relPath: string): Promise<void>
   /** 레거시 ![[..]] 임베드를 표준 마크다운으로 일괄 변환(변환 전 스냅샷). 반환=바뀐 파일·임베드 수. */

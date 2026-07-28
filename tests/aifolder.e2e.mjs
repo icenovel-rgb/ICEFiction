@@ -20,6 +20,8 @@ const NOTE_BODY = '국제시장은 새벽 네 시에 문을 연다.'
 const OPEN_REQUEST = '[[열람: notes/취재메모.md]]'
 const AFTER_OPEN = '메모를 확인했습니다. 새벽 네 시입니다.'
 const CONTINUE = '밤은 조용했다.'
+/** 슬래시 명령에 그 자리에서 덧붙이는 한 줄 지시(§6.1b) — 프롬프트엔 실리고 원고엔 남지 않아야 한다. */
+const ORDER = '비가 그치고 형사가 돌아온다'
 
 /** 요청 본문을 모두 기록하고, 내용에 따라 다른 답을 흘리는 가짜 OpenAI 서버. */
 function fakeServer(bodies) {
@@ -117,6 +119,8 @@ async function main() {
 
     // AI 설정 — 가짜 서버
     await page.click('.rightpanel-tabs button:has-text("AI")')
+    // 자동 연결(§7.3)이 성공하면 설정 폼은 접혀 있다 — ⚙로 직접 편다(연결 상태와 무관하게 열린다).
+    await page.click('.ai-head-tools button[title="설정"]')
     await page.waitForSelector('.ai-setup', { timeout: 5000 })
     await page.fill('.ai-setup input[placeholder="http://localhost:11434/v1"]', base)
     await page.click('.ai-save')
@@ -188,12 +192,27 @@ async function main() {
     console.log('  ✓ 메뉴가 결과(Tab 확정)와 조작 키(Enter/Tab·Esc)를 미리 알려 준다')
 
     await page.click('.cm-tooltip-autocomplete li:has-text("이어쓰기")')
+
+    // ④-0 한 줄 지시 입력(§6.1b) — 명령을 고르면 먼저 "어떻게 이어쓸까요?"를 묻는다.
+    //     **비우고 Enter면 지시 없이 그대로 실행된다**(입력은 선택이지 의무가 아니다).
+    await page.waitForSelector('.slash-ask-input', { timeout: 5000 })
+    const askBar = await page.textContent('.slash-ask')
+    assert(askBar.includes('/이어쓰기'), `지시 막대가 어떤 명령인지 안 알림: ${askBar}`)
+    assert(askBar.includes('Enter') && askBar.includes('Esc'), `지시 막대 조작 안내 없음: ${askBar}`)
+    const placeholder = await page.getAttribute('.slash-ask-input', 'placeholder')
+    assert(placeholder && placeholder.length > 0, '지시 입력칸에 예시 안내가 없음')
+    await page.keyboard.press('Enter') // 비운 채 실행
+    await page.waitForSelector('.slash-ask-input', { state: 'detached', timeout: 4000 })
+    console.log('  ✓ 슬래시 지시 입력 — 명령을 고르면 묻고, 비우면 그냥 실행')
+
     await page.waitForSelector('.cm-ghost', { timeout: 15000 })
     await page.waitForFunction(
       (want) => (document.querySelector('.cm-ghost')?.textContent ?? '').includes(want),
       CONTINUE,
       { timeout: 10000 }
     )
+    const bareAsk = bodies[bodies.length - 1] ?? ''
+    assert(!bareAsk.includes('작가 지시'), '지시를 안 넣었는데 지시 블록이 전송됨')
     const bodyBefore = await docText(page)
     assert(!bodyBefore.includes(CONTINUE), '제안이 원고에 이미 들어가 버림(고스트여야 한다)')
     console.log('  ✓ 고스트 텍스트 — 제안이 원고에 들어가지 않고 흐리게만 보임')
@@ -216,12 +235,41 @@ async function main() {
     assert((await page.locator('.ghost-bar').count()) === 0, '확정 후에도 안내 막대가 남음')
     console.log('  ✓ Tab → 제안이 원고에 확정(안내 글자는 원고에 안 남음)')
 
-    // Esc — 제안 버리기
+    // ④-3 지시를 실제로 넣으면 그 말이 프롬프트 끝에 실린다(§6.1b)
     await page.keyboard.press('Enter')
     await page.keyboard.press('Enter')
     await page.keyboard.type('/')
     await page.waitForSelector('.cm-tooltip-autocomplete', { timeout: 5000 })
     await page.click('.cm-tooltip-autocomplete li:has-text("이어쓰기")')
+    await page.waitForSelector('.slash-ask-input', { timeout: 5000 })
+    await page.keyboard.type(ORDER)
+    await page.keyboard.press('Enter')
+    await page.waitForSelector('.cm-ghost', { timeout: 15000 })
+    await page.waitForFunction(
+      (want) => (document.querySelector('.cm-ghost')?.textContent ?? '').includes(want),
+      CONTINUE,
+      { timeout: 10000 }
+    )
+    const told = bodies[bodies.length - 1] ?? ''
+    assert(told.includes(ORDER), `작가 지시가 프롬프트에 없음:\n${told.slice(-400)}`)
+    assert(told.includes('작가 지시'), '지시 블록 표지가 없음')
+    const orderAt = told.lastIndexOf(ORDER)
+    const beforeAt = told.lastIndexOf('[커서 직전]')
+    assert(orderAt > beforeAt, `지시가 요청문 끝이 아님 (order=${orderAt}, before=${beforeAt})`)
+    const afterOrder = await docText(page)
+    assert(!afterOrder.includes(ORDER), '지시 글자가 원고에 새어 들어감')
+    console.log('  ✓ 슬래시 지시 — 넣은 말이 요청문 끝에 실리고 원고엔 남지 않는다')
+
+    // Esc — 제안 버리기
+    await page.keyboard.press('Escape')
+    await page.waitForSelector('.cm-ghost', { state: 'detached', timeout: 4000 })
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('/')
+    await page.waitForSelector('.cm-tooltip-autocomplete', { timeout: 5000 })
+    await page.click('.cm-tooltip-autocomplete li:has-text("이어쓰기")')
+    await page.waitForSelector('.slash-ask-input', { timeout: 5000 })
+    await page.keyboard.press('Enter')
     await page.waitForSelector('.cm-ghost', { timeout: 15000 })
     await page.keyboard.press('Escape')
     await page.waitForSelector('.cm-ghost', { state: 'detached', timeout: 4000 })

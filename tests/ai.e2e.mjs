@@ -60,6 +60,8 @@ async function main() {
 
     // AI 탭 → 프로바이더 설정(가짜 서버) → 저장+연결확인
     await page.click('.rightpanel-tabs button:has-text("AI")')
+    // 자동 연결(§7.3)이 성공하면 설정 폼은 접혀 있다 — ⚙로 직접 편다(연결 상태와 무관하게 열린다).
+    await page.click('.ai-head-tools button[title="설정"]')
     await page.waitForSelector('.ai-setup', { timeout: 5000 })
     // Base URL만 가짜 서버로 바꾼다. 모델은 무엇이든 가짜 서버가 응답한다(드롭다운/입력 무관).
     await page.fill('.ai-setup input[placeholder="http://localhost:11434/v1"]', base)

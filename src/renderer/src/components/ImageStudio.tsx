@@ -1,14 +1,16 @@
 /**
  * 이미지 스튜디오 — AI에게 그림을 시킨다(BLUEPRINT §7.6).
  *
- * 두 모드:
- *  · doc   캐릭터 얼굴·장소 삽화 → assets/images/에 저장 + 프론트매터 images에 첨부(갤러리 표지가 된다)
- *  · cover 책 표지 → **AI는 글자 없는 그림만 그리고, 제목은 앱이 내장 글꼴로 얹는다**
+ * 네 모드:
+ *  · doc      캐릭터 얼굴·장소 삽화 → assets/images/에 저장 + 프론트매터 images에 첨부(갤러리 표지가 된다)
+ *  · inline   본문 삽화(/삽화) → 커서 자리에 ![](경로)로 삽입
+ *  · cover    책 표지 → **AI는 글자 없는 그림만 그리고, 제목은 앱이 내장 글꼴로 얹는다**
+ *  · docCover 챕터(문서) 표지 → 책 표지와 **같은 방식**. 완성본은 assets/covers/, 원본 아트는 그 아래 숨김 폴더.
  *
  * 표지에서 제목을 앱이 얹는 이유:
  *  ① 프롬프트에 "book cover/title"이 있으면 모델이 가짜 영문 제목을 그려 넣는다(실측).
  *  ② 그림에 구워진 제목은 글꼴·크기·위치를 못 고치고, 한 글자만 바꿔도 통째로 다시 그려야 한다.
- * 그림(cover-art.png)은 그대로 보관하므로, 제목만 바꿔 다시 조판하는 건 재생성 없이 즉시 된다.
+ * 그림(원본 아트)은 그대로 보관하므로, 제목만 바꿔 다시 조판하는 건 재생성 없이 즉시 된다.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ImageEngine, ImageEngineInfo } from '../../../shared/types'
@@ -21,19 +23,28 @@ import {
 } from '../../../shared/imagePrompt'
 import { toStandardEmbed } from '../../../shared/mdEmbed'
 import { useStore } from '../state/store'
-import { FONTS, fontStack } from '../state/settings'
+import { FONTS } from '../state/settings'
 import { useImageStudio } from '../ui/imageStudio'
-import { insertOrReplace } from '../lib/editorBridge'
+import { getEditorView, insertOrReplace } from '../lib/editorBridge'
+import { drawTitledCover, type TitlePos } from '../lib/coverCompose'
 import { assetUrl } from '../lib/media'
 
 type Phase = 'setup' | 'running' | 'done' | 'error'
-type TitlePos = 'top' | 'center' | 'bottom'
 
 /** 비율 드롭다운 — 표는 shared/imagePrompt.ts가 정본(엔진이 못 맞추면 앱이 잘라 맞춘다). */
 const RATIO_OPTIONS = ASPECT_KEYS.map((k) => ({ value: k, label: ASPECTS[k].label }))
 
 /** 내장 글꼴만 제목에 쓴다 — PC에 없어도 같은 표지가 나온다. */
 const TITLE_FONTS = FONTS.filter((f) => f.label.includes('✓'))
+
+/**
+ * 커서가 놓인 자리를 알려 준다 — 그림은 "지금 쓰고 있는 문단"을 그려야 한다(§7.6).
+ * 스튜디오의 대상이 지금 열려 있는 문서일 때만 뜻이 있다. 없으면 undefined → 문서 앞부분으로 폴백.
+ */
+function cursorFor(path: string): number | undefined {
+  if (useStore.getState().activePath !== path) return undefined
+  return getEditorView()?.state.selection.main.head
+}
 
 /**
  * 스튜디오는 **열 때마다 새로 마운트한다**(key=대상).
@@ -51,10 +62,13 @@ export function ImageStudio(): React.ReactElement | null {
 function Studio(): React.ReactElement | null {
   const target = useImageStudio((s) => s.target)
   const close = useImageStudio((s) => s.close)
+  const bumpCover = useImageStudio((s) => s.bumpCover)
   const project = useStore((s) => s.project)
   const frontmatter = useStore((s) => s.frontmatter)
   const body = useStore((s) => s.body)
   const attachImage = useStore((s) => s.attachImage)
+  const setFrontmatter = useStore((s) => s.setFrontmatter)
+  const saveNow = useStore((s) => s.saveNow)
   const loadAssets = useStore((s) => s.loadAssets)
   const refreshTree = useStore((s) => s.refreshTree)
   const loadLibrary = useStore((s) => s.loadLibrary)
@@ -68,6 +82,7 @@ function Studio(): React.ReactElement | null {
   const [log, setLog] = useState<string[]>([])
   const [error, setError] = useState('')
   const [artUrl, setArtUrl] = useState('') // 생성된 그림(표지=글자 없는 아트)
+  const [artRel, setArtRel] = useState('') // 문서 표지 아트의 프로젝트 상대경로(프론트매터에 기록)
   const [bookTitle, setBookTitle] = useState('')
 
   // 표지 제목 조판
@@ -81,7 +96,9 @@ function Studio(): React.ReactElement | null {
   const [saving, setSaving] = useState(false)
 
   const reqId = useRef('')
-  const isCover = target?.kind === 'cover'
+  const isBookCover = target?.kind === 'cover'
+  const isDocCover = target?.kind === 'docCover'
+  const hasTitle = isBookCover || isDocCover // 제목을 앱이 얹는 모드
 
   // 열릴 때 초안 프롬프트·스타일·엔진을 준비한다.
   useEffect(() => {
@@ -104,18 +121,33 @@ function Studio(): React.ReactElement | null {
           setPhase('done')
         }
       })
+      return
+    }
+
+    const docTitle = frontmatter.title ?? target.path.split('/').pop()?.replace(/\.md$/, '') ?? ''
+    setStyle(project?.manifest.imageStyle ?? '')
+    setPrompt(
+      draftDocPrompt({
+        name: docTitle,
+        type: frontmatter.type,
+        synopsis: frontmatter.synopsis,
+        body,
+        cursor: cursorFor(target.path), // 문서 맨 앞이 아니라 **커서가 있는 문단**을 근거로
+        aliases: frontmatter.aliases
+      })
+    )
+
+    if (target.kind === 'docCover') {
+      setRatio('3:4') // 갤러리 카드(3:4)에 꽉 차게
+      setTitle(docTitle)
+      if (frontmatter.coverArt) {
+        // 이미 그려둔 아트가 있으면 다시 그리지 않고 제목만 재조판할 수 있다.
+        setArtRel(frontmatter.coverArt)
+        setArtUrl(window.api.docCoverUrl(frontmatter.coverArt, Date.now()))
+        setPhase('done')
+      }
     } else {
       setRatio(target.kind === 'inline' ? '16:9' : '1:1')
-      setStyle(project?.manifest.imageStyle ?? '')
-      setPrompt(
-        draftDocPrompt({
-          name: frontmatter.title ?? '',
-          type: frontmatter.type,
-          synopsis: frontmatter.synopsis,
-          body,
-          aliases: frontmatter.aliases
-        })
-      )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target])
@@ -133,6 +165,10 @@ function Studio(): React.ReactElement | null {
         if (target?.kind === 'cover') {
           setArtUrl(`${d.url}&t=${Date.now()}`)
           await loadLibrary()
+        } else if (target?.kind === 'docCover') {
+          // 글자 없는 아트만 생겼다 — 제목은 아래에서 얹어 '이 표지로 저장'할 때 완성된다.
+          setArtRel(d.path)
+          setArtUrl(d.url)
         } else if (target?.kind === 'inline') {
           // 본문 삽화 — 커서 자리에 표준 마크다운으로 넣는다(문서 기준 상대경로 §6.10).
           insertOrReplace(`\n\n${toStandardEmbed(d.path, target.path)}\n\n`)
@@ -160,54 +196,20 @@ function Studio(): React.ReactElement | null {
     }
   }, [target, attachImage, loadAssets, refreshTree, loadLibrary])
 
-  // 표지 미리보기 — 그림 위에 제목을 얹어 캔버스에 그린다.
+  // 표지 미리보기 — 그림 위에 제목을 얹어 캔버스에 그린다(책 표지·챕터 표지 공용).
   useEffect(() => {
-    if (!isCover || !artUrl || !canvasRef.current) return
+    if (!hasTitle || !artUrl || !canvasRef.current) return
     let cancelled = false
-    void (async () => {
-      const img = new Image()
-      // 캔버스 오염 방지 — 이게 없으면 toDataURL()이 SecurityError로 막힌다(ice-cover는 다른 오리진).
-      img.crossOrigin = 'anonymous'
-      img.src = artUrl
-      await img.decode().catch(() => {})
-      if (cancelled || !canvasRef.current) return
-      const cv = canvasRef.current
-      cv.width = img.naturalWidth || 1024
-      cv.height = img.naturalHeight || 1536
-      const ctx = cv.getContext('2d')
-      if (!ctx) return
-      ctx.drawImage(img, 0, 0, cv.width, cv.height)
-      if (!titleOn || !title.trim()) return
-
-      const family = fontStack(titleFont)
-      const px = Math.round((cv.width * titleSize) / 100)
-      const font = `700 ${px}px ${family}`
-      await document.fonts.load(font).catch(() => {}) // 내장 글꼴 로드 보장
-      ctx.font = font
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillStyle = titleColor
-      // 어떤 그림 위에서도 읽히게 — 부드러운 그림자.
-      ctx.shadowColor = titleColor === '#ffffff' ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.5)'
-      ctx.shadowBlur = Math.round(px * 0.35)
-
-      const lines = title.split('\n').map((l) => l.trim()).filter(Boolean)
-      const lh = px * 1.3
-      const blockH = lines.length * lh
-      const cy =
-        titlePos === 'top'
-          ? cv.height * 0.16 + blockH / 2
-          : titlePos === 'center'
-            ? cv.height / 2
-            : cv.height * 0.84 - blockH / 2
-      lines.forEach((line, i) => {
-        ctx.fillText(line, cv.width / 2, cy - blockH / 2 + lh / 2 + i * lh)
-      })
-    })()
+    void drawTitledCover(
+      canvasRef.current,
+      artUrl,
+      { title, on: titleOn, fontKey: titleFont, sizePct: titleSize, color: titleColor, pos: titlePos },
+      () => cancelled
+    )
     return () => {
       cancelled = true
     }
-  }, [isCover, artUrl, title, titleOn, titleFont, titleSize, titleColor, titlePos])
+  }, [hasTitle, artUrl, title, titleOn, titleFont, titleSize, titleColor, titlePos])
 
   const engineOptions = useMemo(
     () => [
@@ -246,24 +248,40 @@ function Studio(): React.ReactElement | null {
     setPhase('setup')
   }
 
+  /** 제목을 얹은 완성본을 저장한다 — 책 표지는 책 폴더로, 문서 표지는 프론트매터로. */
   async function onSaveCover(): Promise<void> {
-    if (!target || target.kind !== 'cover' || !canvasRef.current) return
+    if (!target || !canvasRef.current) return
     setSaving(true)
     try {
       const data = canvasRef.current.toDataURL('image/png')
-      await window.api.setBookCoverData(target.bookId, data)
-      await loadLibrary()
+      if (target.kind === 'cover') {
+        await window.api.setBookCoverData(target.bookId, data)
+        await loadLibrary()
+      } else if (target.kind === 'docCover') {
+        const rel = await window.api.saveDocCover(target.path, data)
+        // 프론트매터 기록은 렌더러가 한다 — main이 편집 중인 .md를 동시에 고치면 본문과 경합한다.
+        setFrontmatter({ cover: rel, coverArt: artRel || undefined })
+        await saveNow()
+        await refreshTree()
+        bumpCover() // 경로가 그대로라 캐시를 안 털면 옛 표지가 계속 보인다
+      }
       close()
     } finally {
       setSaving(false)
     }
   }
 
+  const headTitle = isBookCover
+    ? `표지 만들기 — ${bookTitle}`
+    : isDocCover
+      ? `표지 만들기 — ${title || '문서'}`
+      : 'AI 이미지 생성'
+
   return (
     <div className="modal-backdrop" onClick={() => phase !== 'running' && close()}>
       <div className="studio" onClick={(e) => e.stopPropagation()}>
         <header className="studio-head">
-          <span>{isCover ? `표지 만들기 — ${bookTitle}` : 'AI 이미지 생성'}</span>
+          <span>{headTitle}</span>
           <button onClick={close} disabled={phase === 'running'}>
             ✕
           </button>
@@ -332,7 +350,7 @@ function Studio(): React.ReactElement | null {
             <span className="insp-hint">
               AI는 <b>글자 없는 그림</b>만 그립니다 — 표지라고 말하면 엉터리 글자를 그려 넣기
               때문입니다.{' '}
-              {isCover &&
+              {hasTitle &&
                 '제목은 아래에서 앱이 얹습니다. 그림은 보관되니 제목·글꼴·위치는 다시 그리지 않고 언제든 고칠 수 있습니다.'}
             </span>
 
@@ -362,7 +380,7 @@ function Studio(): React.ReactElement | null {
           </div>
 
           <div className="studio-right">
-            {isCover ? (
+            {hasTitle ? (
               <>
                 <canvas ref={canvasRef} className="studio-canvas" />
                 {!artUrl && <div className="studio-blank">그림을 먼저 그리세요</div>}

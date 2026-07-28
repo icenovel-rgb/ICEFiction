@@ -18,6 +18,7 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
 import { markdown } from '@codemirror/lang-markdown'
 import { useAi } from '../state/ai'
+import { useSession } from '../state/session'
 import { useStore } from '../state/store'
 import { setEditorView } from '../lib/editorBridge'
 import { acceptGhost, clearGhost, ghostField, type GhostState } from '../lib/ghostText'
@@ -121,7 +122,20 @@ const paperTheme = EditorView.theme({
     textAlign: 'var(--paper-align, justify)', // 문단 정렬(보기 설정) — 줄에 상속돼 양쪽/가운데 등 적용
     userSelect: 'text' // body의 user-select:none 상속 차단(입력·선택 보장)
   },
-  '.cm-line': { padding: '0' },
+  /**
+   * 문단 모양(§8.1) — 마크다운에서 한 문단은 한 줄(.cm-line)이므로 줄 아래 여백이 곧 문단 간격이다.
+   *
+   * margin이 아니라 **padding-bottom**을 쓴다: 인접 형제끼리 margin이 상쇄되지 않고, CM6의 줄 높이
+   * 측정이 DOM 그대로라 어긋나지 않는다. 빈 줄은 markdownView가 `.cm-blank-line`으로 표시해 간격을
+   * 0으로 되돌린다(안 그러면 엔터 두 번 친 기존 원고가 두 배로 벌어진다).
+   */
+  '.cm-line': {
+    padding: '0',
+    paddingBottom: 'var(--paper-para-gap, 0)',
+    paddingLeft: 'var(--paper-hang-pad, 0)',
+    textIndent: 'var(--paper-indent, 0)'
+  },
+  '.cm-line.cm-blank-line': { paddingBottom: '0' },
   '&.cm-focused': { outline: 'none' },
   // 줄번호 거터 — 종이에 녹아들게(투명 배경, 흐린 글자). display는 변수로 토글(줄번호 숨기기).
   '.cm-gutters': {
@@ -171,6 +185,68 @@ function GhostBar({ ghost, view }: { ghost: GhostState; view: EditorView | null 
   )
 }
 
+/**
+ * 슬래시 명령의 한 줄 지시 입력(§6.1b) — "어떤 내용으로 이어써 달라"를 그 자리에서 덧붙인다.
+ *
+ * 모달이 아니라 본문 아래 막대인 이유: 슬래시 명령의 요점이 "패널로 시선을 옮기지 않고 쓰던
+ * 자리에서 부른다"이기 때문이다. 비우고 Enter면 지시 없이 그대로 실행한다 — 입력은 **선택**이다.
+ */
+function SlashAskBar({ view }: { view: EditorView | null }): React.ReactElement | null {
+  const pending = useAi((s) => s.pendingAsk)
+  const [text, setText] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // 막대가 뜰 때마다 빈 칸으로 시작하고 바로 칠 수 있게 한다.
+  useEffect(() => {
+    if (!pending) return
+    setText('')
+    inputRef.current?.focus()
+  }, [pending])
+
+  if (!pending) return null
+  const ask = pending.cmd.ask
+
+  const run = (): void => {
+    useAi.getState().submitAsk(text)
+    view?.focus()
+  }
+  const cancel = (): void => {
+    useAi.getState().cancelAsk()
+    view?.focus()
+  }
+
+  return (
+    <div className="ghost-bar slash-ask" role="dialog">
+      <span className="ghost-bar-what">
+        <b>{pending.cmd.label}</b> {ask?.title ?? '어떻게 할까요?'}
+      </span>
+      <input
+        ref={inputRef}
+        className="slash-ask-input"
+        value={text}
+        placeholder={ask?.placeholder ?? '비워 두면 그냥 실행합니다'}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          // 한글 조합 중의 Enter는 글자를 확정하는 키다 — 여기서 가로채면 마지막 글자가 잘린다.
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+            e.preventDefault()
+            run()
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            cancel()
+          }
+        }}
+      />
+      <button className="ghost-btn accept" onClick={run}>
+        <kbd>Enter</kbd> 실행
+      </button>
+      <button className="ghost-btn" onClick={cancel}>
+        <kbd>Esc</kbd> 취소
+      </button>
+    </div>
+  )
+}
+
 /** 슬래시 명령이 남긴 한마디(실패·저장 완료). 잠시 뒤 스스로 사라진다. */
 function NoticeBar({ text }: { text: string }): React.ReactElement {
   useEffect(() => {
@@ -187,16 +263,53 @@ function NoticeBar({ text }: { text: string }): React.ReactElement {
   )
 }
 
+/** 커서를 적어 두기까지 기다리는 시간 — 타이핑 중에 계속 쓰지 않게. */
+const SPOT_DEBOUNCE_MS = 600
+
 export function Editor(): React.ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const syncingRef = useRef(false)
+  // 쓰던 자리(§6.1) — 마지막으로 본 값과 대기 중인 타이머. 문서를 떠날 때 **그 문서의 경로로** 적어야
+  // 하므로 경로까지 함께 들고 있는다(전환 뒤에 store를 읽으면 새 문서 경로가 잡힌다).
+  const spotRef = useRef<{ path: string; anchor: number; head: number; scrollTop: number } | null>(null)
+  const spotTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function captureSpot(view: EditorView): void {
+    const path = useStore.getState().activePath
+    if (!path) return
+    const sel = view.state.selection.main
+    spotRef.current = {
+      path,
+      anchor: sel.anchor,
+      head: sel.head,
+      scrollTop: view.scrollDOM.scrollTop
+    }
+  }
+
+  function flushSpot(): void {
+    if (spotTimer.current) {
+      clearTimeout(spotTimer.current)
+      spotTimer.current = null
+    }
+    const spot = spotRef.current
+    const key = useStore.getState().project?.absolutePath
+    if (spot && key) useSession.getState().remember(key, spot)
+  }
+
+  function scheduleSpot(view: EditorView): void {
+    captureSpot(view)
+    if (spotTimer.current) clearTimeout(spotTimer.current)
+    spotTimer.current = setTimeout(flushSpot, SPOT_DEBOUNCE_MS)
+  }
+
   const editableRef = useRef(new Compartment())
   const activePath = useStore((s) => s.activePath)
   const pendingJump = useStore((s) => s.pendingJump)
   // CM 안의 제안 상태를 React로 끌어온다(막대를 그리려면 필요하다).
   const [ghost, setGhost] = useState<GhostState | null>(null)
   const notice = useAi((s) => s.inlineNotice)
+  const pendingAsk = useAi((s) => s.pendingAsk)
 
   // 뷰는 마운트 시 한 번만 생성 — 호스트는 항상 DOM에 있으므로 여기서 확실히 만들어진다.
   useEffect(() => {
@@ -276,6 +389,8 @@ export function Editor(): React.ReactElement {
             // 제안이 생기고·자라고·사라질 때만 React에 알린다(매 입력마다 리렌더하지 않게).
             const now = u.state.field(ghostField, false) ?? null
             if (now !== (u.startState.field(ghostField, false) ?? null)) setGhost(now)
+            // 쓰던 자리 기억(§6.1) — 커서가 멈추면 적어 둔다(매 이동마다 localStorage를 두드리지 않게).
+            if (u.selectionSet || u.docChanged) scheduleSpot(u.view)
           })
         ]
       })
@@ -304,7 +419,22 @@ export function Editor(): React.ReactElement {
       syncingRef.current = false
     }
     if (activePath) view.focus()
+    // 이 문서를 떠나기 직전(다음 문서로 갈아끼우기 전)에 마지막 자리를 확정해 둔다.
+    return () => {
+      flushSpot()
+      spotRef.current = null
+    }
   }, [activePath])
+
+  // 앱을 닫을 때도 대기 중인 자리를 흘려 넣는다(디바운스 때문에 마지막 몇 초가 날아가지 않게).
+  useEffect(() => {
+    window.addEventListener('beforeunload', flushSpot)
+    return () => {
+      window.removeEventListener('beforeunload', flushSpot)
+      flushSpot()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 전체 검색 점프(§6.9) — 예약된 위치를 선택하고 화면 중앙으로. **위 본문 교체 effect보다 뒤에
   // 선언해야 한다**: 문서 전환과 점프가 같은 커밋에 오면 React가 선언 순서대로 실행하므로,
@@ -320,6 +450,13 @@ export function Editor(): React.ReactElement {
       selection: { anchor: from, head: to },
       effects: EditorView.scrollIntoView(from, { y: 'center' })
     })
+    // 세션 복원(§6.1)은 스크롤 위치까지 알고 있다 — 화면이 그린 뒤에 되돌려 어제 보던 그림 그대로.
+    const { scrollTop } = pendingJump
+    if (scrollTop != null) {
+      requestAnimationFrame(() => {
+        if (viewRef.current) viewRef.current.scrollDOM.scrollTop = scrollTop
+      })
+    }
     view.focus()
     useStore.getState().clearJump()
   }, [pendingJump])
@@ -332,8 +469,14 @@ export function Editor(): React.ReactElement {
           <p>왼쪽 바인더에서 문서를 선택하거나 새로 만드세요.</p>
         </div>
       )}
-      {ghost && <GhostBar ghost={ghost} view={viewRef.current} />}
-      {!ghost && notice && <NoticeBar text={notice} />}
+      {/* 지시 입력이 떠 있는 동안엔 그것만 보인다 — 같은 자리에 두 막대가 겹치지 않게. */}
+      {pendingAsk ? (
+        <SlashAskBar view={viewRef.current} />
+      ) : ghost ? (
+        <GhostBar ghost={ghost} view={viewRef.current} />
+      ) : (
+        notice && <NoticeBar text={notice} />
+      )}
     </div>
   )
 }

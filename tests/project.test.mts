@@ -279,6 +279,88 @@ async function main(): Promise<void> {
   assert(!ctxNoAssets.chips.some((c) => c.kind === 'asset'), '자료 끔인데도 자료 칩 있음')
   ok('buildAiContext: 자료 폴더 자동 읽기(문서 내용 포함) + 토글로 제외')
 
+  // 19) ★문서 표지(챕터 표지 §7.6) — 저장 위치·프론트매터 왕복·트리 노출·제거
+  {
+    const png = `data:image/png;base64,${Buffer.alloc(400, 7).toString('base64')}`
+    const rel = await svc.saveDocCover(seedPath, png)
+    assert.equal(rel, 'assets/covers/01-첫-장.png', `표지 경로 규칙이 다름: ${rel}`)
+    await fs.access(join(root, rel))
+
+    // 원본 아트는 숨김 폴더에 — 자료 갤러리·AI 목차를 조판 중간물로 더럽히지 않기 위해서다.
+    const { art } = svc.coverPathsFor(seedPath)
+    assert.equal(art, 'assets/covers/.art/01-첫-장.png')
+    await fs.mkdir(join(root, 'assets', 'covers', '.art'), { recursive: true })
+    await fs.writeFile(join(root, art), Buffer.alloc(400, 7))
+    const assets = await svc.listAssets()
+    assert(assets.some((a) => a.path === rel), '완성 표지가 자료 목록에 없음')
+    assert(!assets.some((a) => a.path === art), `숨김 아트가 자료 목록에 노출됨: ${art}`)
+
+    // 프론트매터 왕복 + 트리 노드에 cover가 실린다(갤러리 카드 표지).
+    const cur = await svc.readDoc(seedPath)
+    await svc.saveDoc({
+      path: seedPath,
+      frontmatter: { ...cur.frontmatter, cover: rel, coverArt: art },
+      body: cur.body
+    })
+    const backCover = await svc.readDoc(seedPath)
+    assert.equal(backCover.frontmatter.cover, rel)
+    assert.equal(backCover.frontmatter.coverArt, art)
+    const rawCover = await fs.readFile(join(root, seedPath), 'utf8')
+    assert.match(rawCover, /cover_art: /, '디스크에 snake_case(cover_art)로 기록되지 않음')
+
+    const treeC = await svc.buildTree()
+    const chapter = treeC
+      .find((n) => n.path === 'manuscript')!
+      .children!.find((c) => c.path === seedPath)!
+    assert.equal(chapter.cover, rel, '트리 노드에 표지가 안 실림')
+
+    await svc.removeDocCover(seedPath)
+    await assert.rejects(() => fs.access(join(root, rel)), '표지 파일이 남아있음')
+    await assert.rejects(() => fs.access(join(root, art)), '원본 아트가 남아있음')
+    ok('문서 표지: 저장 경로·숨김 아트·프론트매터 왕복·트리 노출·제거')
+  }
+
+  // 20) ★인스펙터에서 뺀 항목(POV·목표 글자수)이라도 **파일의 값은 지우지 않는다**(무손실 §4)
+  {
+    await fs.writeFile(
+      join(root, 'manuscript', 'legacy.md'),
+      '---\ntype: chapter\ntitle: 옛 원고\npov: 김철수\nwords_target: 5000\n---\n본문\n'
+    )
+    const legacy = await svc.readDoc('manuscript/legacy.md')
+    assert.equal(legacy.frontmatter.pov, '김철수')
+    assert.equal(legacy.frontmatter.wordsTarget, 5000)
+    // 앱이 다른 항목만 고쳐 저장해도 옛 값이 살아남아야 한다.
+    await svc.saveDoc({
+      path: 'manuscript/legacy.md',
+      frontmatter: { ...legacy.frontmatter, status: 'done' },
+      body: legacy.body
+    })
+    const raw = await fs.readFile(join(root, 'manuscript', 'legacy.md'), 'utf8')
+    assert.match(raw, /pov: 김철수/, 'UI에서 뺐다고 파일의 POV가 지워짐')
+    assert.match(raw, /words_target: 5000/, 'UI에서 뺐다고 파일의 목표 글자수가 지워짐')
+    ok('무손실: UI에서 뺀 pov·words_target도 파일에서는 보존')
+  }
+
+  // 21) ★정렬 — 문서가 먼저, 폴더가 나중(문체지침이 [문체] 바로 아래 §6.2)
+  {
+    const treeS = await svc.buildTree()
+    const style = treeS.find((n) => n.path === 'style')!
+    const names = style.children!.map((c) => `${c.isDir ? '/' : ''}${c.name}`)
+    assert.equal(names[0], '문체지침', `문체지침이 맨 위가 아님: ${names.join(', ')}`)
+    assert(names.includes('/samples'), 'samples 폴더가 없음')
+    assert(
+      names.indexOf('문체지침') < names.indexOf('/samples'),
+      `폴더가 문서보다 앞섬: ${names.join(', ')}`
+    )
+    // 모든 섹션이 같은 규칙이다 — 어느 폴더에서든 문서가 폴더보다 앞선다.
+    await svc.createFolder('manuscript', '1부')
+    const treeM = (await svc.buildTree()).find((n) => n.path === 'manuscript')!
+    const firstDirAt = treeM.children!.findIndex((c) => c.isDir)
+    const lastFileAt = treeM.children!.map((c) => c.isDir).lastIndexOf(false)
+    assert(firstDirAt > lastFileAt, '원고에서 폴더가 문서보다 앞섬')
+    ok('정렬: 문서 먼저 → 폴더 나중(모든 섹션)')
+  }
+
   await fs.rm(root, { recursive: true, force: true })
   console.log(`\n✅ ProjectService: ${pass}개 검증 통과`)
 }

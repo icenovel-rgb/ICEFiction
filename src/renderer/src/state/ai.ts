@@ -78,6 +78,11 @@ interface AiState {
   /** 지금 진행 중인 슬래시 명령(§6.1b) — 있으면 델타를 채팅이 아니라 고스트로 보낸다. */
   inline: { kind: SlashKind; label: string; from: number; to: number } | null
   /**
+   * 명령을 고른 뒤 **한 줄 지시를 기다리는 중**(§6.1b). 본문 아래 입력 막대가 이걸 보고 뜬다.
+   * 비우고 Enter면 지시 없이 그대로 실행 — 입력을 강제하지 않는 것이 요점이다.
+   */
+  pendingAsk: { cmd: SlashCommand; ctx: SlashContext; range: { from: number; to: number } } | null
+  /**
    * 슬래시 명령이 사용자에게 바로 해야 할 말(실패·안내). AI 패널이 닫혀 있어도 보이도록
    * 본문 위 안내 막대에 띄운다 — 패널의 `error`와 달리 "쓰던 자리"에 뜬다.
    */
@@ -102,6 +107,16 @@ interface AiState {
   analyzeStyle: () => Promise<void>
   /** 본문 슬래시 명령(§6.1b) — 결과를 채팅이 아니라 커서 자리 고스트/문서 정보로 흘린다. */
   runInline: (cmd: SlashCommand, ctx: SlashContext, range: { from: number; to: number }) => Promise<void>
+  /** 한 줄 지시를 받을 준비(입력 막대 띄우기). */
+  askInline: (
+    cmd: SlashCommand,
+    ctx: SlashContext,
+    range: { from: number; to: number }
+  ) => void
+  /** 입력 막대에서 확정 — instruction이 비어 있어도 그대로 실행한다. */
+  submitAsk: (instruction: string) => void
+  /** 입력 막대 취소(Esc). */
+  cancelAsk: () => void
   /** 본문 위 안내 막대에 한마디(null이면 지움). */
   notify: (msg: string | null) => void
   cancel: () => void
@@ -142,6 +157,7 @@ export const useAi = create<AiState>((set, get) => ({
   lastPrompt: null,
   pendingStyleGuide: false,
   inline: null,
+  pendingAsk: null,
   inlineNotice: null,
   openRounds: 0,
   openingFiles: [],
@@ -375,6 +391,22 @@ export const useAi = create<AiState>((set, get) => ({
       openingFiles: []
     })
     void window.api.aiGenerate(id, msgs)
+  },
+
+  askInline(cmd, ctx, range) {
+    if (get().streaming) return
+    set({ pendingAsk: { cmd, ctx, range }, inlineNotice: null })
+  },
+
+  submitAsk(instruction) {
+    const ask = get().pendingAsk
+    if (!ask) return
+    set({ pendingAsk: null })
+    void get().runInline(ask.cmd, { ...ask.ctx, instruction }, ask.range)
+  },
+
+  cancelAsk() {
+    if (get().pendingAsk) set({ pendingAsk: null })
   },
 
   notify: (msg) => set({ inlineNotice: msg }),

@@ -39,6 +39,10 @@ const SECTIONS: { dir: string; type: DocType }[] = [
   { dir: 'style', type: 'style' } // 문체 방 — AI가 항상 이 문체로 쓰게 하는 하네스(§7.2a)
 ]
 
+/** 문서 표지(챕터 표지 §7.6) — 완성본은 여기에, 글자 없는 원본 아트는 그 아래 숨김 폴더에. */
+const COVER_DIR = 'assets/covers'
+const COVER_ART_DIR = '.art'
+
 /** 문체 방 — 지침은 style/ 직속 .md, 참고 원고는 style/samples/ 아래. */
 const STYLE_DIR = 'style'
 const STYLE_SAMPLES = 'samples'
@@ -237,6 +241,7 @@ export class ProjectService {
     let synopsis: string | undefined
     let aliases: string[] | undefined
     let image: string | undefined
+    let cover: string | undefined
     let type = fallback
     try {
       const { frontmatter } = parseDoc(await fs.readFile(abs, 'utf8'))
@@ -249,10 +254,59 @@ export class ProjectService {
       // 갤러리 표지 = 첨부 이미지의 첫 장(캐릭터 얼굴 레퍼런스 등, §6.10).
       const first = (frontmatter.images ?? []).find((p) => IMAGE_EXT.has(extname(p).toLowerCase()))
       if (first) image = first
+      // 문서 표지(챕터 표지 §7.6)가 있으면 갤러리에서 이것을 먼저 쓴다.
+      if (frontmatter.cover && IMAGE_EXT.has(extname(frontmatter.cover).toLowerCase())) {
+        cover = frontmatter.cover
+      }
     } catch {
       // 파싱 실패해도 파일명으로 노드는 만든다(견고성).
     }
-    return { path: relPath, name: title, isDir: false, type, status, order, synopsis, aliases, image }
+    return {
+      path: relPath,
+      name: title,
+      isDir: false,
+      type,
+      status,
+      order,
+      synopsis,
+      aliases,
+      image,
+      cover
+    }
+  }
+
+  /**
+   * 문서 표지 파일의 프로젝트 상대 경로(§7.6).
+   *  · 완성본(제목 포함) `assets/covers/<문서명>.png`
+   *  · 원본 아트(글자 없음) `assets/covers/.art/<문서명>.png`
+   *
+   * 아트를 **점(.)으로 시작하는 폴더**에 두는 이유: scanDir·listAssets가 숨김 항목을 이미 건너뛰므로
+   * 자료 갤러리와 AI 전체 목차(§7.5)가 조판용 중간 산출물로 더럽혀지지 않는다(.thumbs와 같은 관례).
+   */
+  coverPathsFor(docRelPath: string): { cover: string; art: string } {
+    const stem = sanitize(basename(docRelPath, extname(docRelPath)))
+    return { cover: `${COVER_DIR}/${stem}.png`, art: `${COVER_DIR}/${COVER_ART_DIR}/${stem}.png` }
+  }
+
+  /** 제목까지 얹은 문서 표지를 저장한다(base64 PNG). 반환 = 루트 기준 상대 경로. */
+  async saveDocCover(docRelPath: string, base64Png: string): Promise<string> {
+    const root = this.requireRoot()
+    const { cover } = this.coverPathsFor(docRelPath)
+    const data = Buffer.from(base64Png.replace(/^data:image\/png;base64,/, ''), 'base64')
+    if (data.length < 100) throw new Error('표지 이미지 데이터가 비어 있습니다')
+    const abs = toAbs(root, cover)
+    await fs.mkdir(dirname(abs), { recursive: true })
+    await writeFileAtomic(abs, data)
+    return cover
+  }
+
+  /** 문서 표지·원본 아트 파일을 지운다(프론트매터 해제는 렌더러가 저장하며 한다). */
+  async removeDocCover(docRelPath: string): Promise<void> {
+    const root = this.requireRoot()
+    const { cover, art } = this.coverPathsFor(docRelPath)
+    for (const rel of [cover, art]) {
+      await fs.rm(toAbs(root, rel), { force: true })
+    }
   }
 
   async readDoc(relPath: string): Promise<DocContent> {
@@ -1041,8 +1095,14 @@ function assetKind(name: string): 'image' | 'video' | 'other' | 'skip' {
 }
 
 function sortNodes(a: TreeNode, b: TreeNode): number {
-  // 폴더 우선 → order → 이름.
-  if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+  /**
+   * **문서 우선 → 폴더 → order → 이름.**
+   *
+   * 폴더를 위에 올리면 그 섹션의 알맹이(문체 방의 `문체지침.md`, 원고의 프롤로그)가 하위 폴더에
+   * 밀려 한참 아래로 내려간다. 섹션을 열었을 때 "이 섹션이 무엇인지"를 알려 주는 문서가 먼저
+   * 보이고, 묶음(폴더)은 그 아래 서랍처럼 놓이는 편이 읽기 쉽다(사용자 지적 §6.2).
+   */
+  if (a.isDir !== b.isDir) return a.isDir ? 1 : -1
   const ao = a.order ?? Number.POSITIVE_INFINITY
   const bo = b.order ?? Number.POSITIVE_INFINITY
   if (ao !== bo) return ao - bo

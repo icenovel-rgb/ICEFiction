@@ -14,6 +14,10 @@ const KIND_LABEL: Record<AIProviderKind, string> = {
   cli: 'CLI 에이전트 (claude · codex)'
 }
 
+/** 처음 설정 — main의 AIService.DEFAULT와 같은 값(연결 실패 시 되돌아갈 자리). */
+const DEFAULT_BASE_URL = 'http://localhost:11434/v1'
+const DEFAULT_MODEL = 'llama3.1'
+
 const ROLE_LABEL: Record<ChatMessage['role'], string> = {
   system: '시스템 지시',
   user: '사용자 · 맥락',
@@ -126,6 +130,16 @@ function Setup(): React.ReactElement {
     await check()
   }
 
+  /** 연결이 안 될 때의 탈출구 — 처음 설정(로컬 Ollama)으로 되돌린다. */
+  async function onResetDefault(): Promise<void> {
+    setKind('openai')
+    setBaseUrl(DEFAULT_BASE_URL)
+    setModel(DEFAULT_MODEL)
+    setApiKey('')
+    await saveConfig({ kind: 'openai', model: DEFAULT_MODEL, baseUrl: DEFAULT_BASE_URL })
+    await check()
+  }
+
   return (
     <div className="ai-setup">
       <label className="ai-field">
@@ -222,6 +236,15 @@ function Setup(): React.ReactElement {
           {conn.detail}
         </div>
       )}
+      {/*
+        연결에 실패했을 때만 나오는 탈출구. 앱이 저장된 설정을 **말없이 기본값으로 덮어쓰지 않는다** —
+        잘 쓰던 설정이 잠깐의 네트워크 문제로 지워지면 다시 입력해야 하기 때문이다. 되돌리기는 사용자가 누른다.
+      */}
+      {conn && !conn.ok && (
+        <button className="ai-reset-default" onClick={() => void onResetDefault()}>
+          기본값(로컬 Ollama)으로 되돌리기
+        </button>
+      )}
     </div>
   )
 }
@@ -261,9 +284,18 @@ export function AiPanel(): React.ReactElement {
   const [showPrompt, setShowPrompt] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  const checking = useAi((s) => s.checking)
+  const [waitedTooLong, setWaitedTooLong] = useState(false)
+
   useEffect(() => {
     if (!config) void loadConfig()
   }, [config, loadConfig])
+
+  // 자동 연결이 이 시간을 넘기면 설정 폼을 내준다(확인은 계속 돈다 — 조작을 막지 않을 뿐이다).
+  useEffect(() => {
+    const t = setTimeout(() => setWaitedTooLong(true), 2500)
+    return () => clearTimeout(t)
+  }, [])
 
   useEffect(() => {
     const t = setTimeout(() => void refreshContext(), 600)
@@ -275,7 +307,15 @@ export function AiPanel(): React.ReactElement {
   }, [messages, streamText])
 
   const connected = conn?.ok
-  const setupOpen = showSetup || !connected
+  /**
+   * 시작하자마자 도는 자동 연결(§7.3) 중에는 설정 폼을 펼치지 않는다 — 잘 저장된 설정이 있는데도
+   * "설정하세요"가 먼저 튀어나오면 매번 뭔가 잘못된 것처럼 보인다(사용자 지적).
+   *
+   * 단 **기다림에 상한을 둔다.** CLI 프로바이더는 확인에 몇 초가 걸리고, 응답 없는 서버라면
+   * 영영 끝나지 않을 수도 있다. 그동안 아무 조작도 못 하면 자동 연결이 오히려 발목을 잡는다.
+   */
+  const firstCheck = checking && !conn && !waitedTooLong
+  const setupOpen = showSetup || (!connected && !firstCheck)
 
   function onSend(): void {
     if (!input.trim()) return
@@ -307,6 +347,11 @@ export function AiPanel(): React.ReactElement {
         </div>
       </div>
 
+      {firstCheck && (
+        <div className="ai-conn ai-conn-ok">
+          ◐ 지난번 설정({config?.model || config?.kind || 'AI'})으로 연결하는 중…
+        </div>
+      )}
       {setupOpen && <Setup />}
       {showPrompt && <PromptViewer onClose={() => setShowPrompt(false)} />}
 
