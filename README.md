@@ -42,6 +42,24 @@ npm run dist:mac   # (macOS에서 실행) dmg → release/  (무서명, 배포 �
 > macOS 이식: 코드는 크로스플랫폼(경로 POSIX·`process.platform` 분기·CLI PATH 보강·mac 앱 수명주기).
 > Mac에서 `npm install && npm run dist:mac` 로 dmg 생성. 무서명이라 첫 실행은 우클릭→열기(Gatekeeper).
 
+### 배포 — 태그 하나로 두 플랫폼
+
+`v*` 태그를 밀면 GitHub Actions가 양쪽 설치 파일을 만들어 릴리스에 붙인다. 손으로 빌드해 올릴 필요가 없다.
+
+| 워크플로 | 러너 | 산출물 | 서명 |
+|---|---|---|---|
+| `build-mac` | `macos-14` (arm64) | `ICEFiction-<버전>.dmg` | Developer ID 서명 + 공증 (Secrets 있을 때) |
+| `build-win` | `windows-latest` (x64) | `ICEFiction-Setup-<버전>.exe` | 무서명 — SmartScreen "추가 정보 → 실행" |
+
+```bash
+# package.json 의 version 을 올린 뒤
+git tag v0.10.2 && git push origin v0.10.2
+```
+
+둘 다 `npm ci` → `typecheck` → `npm test` → `build` 를 거치므로, 테스트가 깨지면 설치 파일이 나오지
+않는다. main 대상 PR에서도 같은 검증이 돌지만 릴리스 첨부는 태그에서만 한다.
+자세한 절차·서명 자격증명은 [docs/BUILD-MAC.md](docs/BUILD-MAC.md).
+
 ## 아키텍처
 
 ```

@@ -16,6 +16,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const GUIDE = '한 문장은 40자를 넘기지 않는다.'
+
+/** 수정 키 — CodeMirror의 `Mod-` 는 mac에서 Cmd, 그 외에서 Ctrl(editor.e2e.mjs와 같은 이유). */
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control'
 const NOTE_BODY = '국제시장은 새벽 네 시에 문을 연다.'
 const OPEN_REQUEST = '[[열람: notes/취재메모.md]]'
 const AFTER_OPEN = '메모를 확인했습니다. 새벽 네 시입니다.'
@@ -168,7 +171,7 @@ async function main() {
 
     // ③ 슬래시 명령 — `/` 메뉴 → 고스트 → Tab 채택
     await page.click('.cm-content')
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(`${MOD}+End`)
     await page.keyboard.press('Enter')
     await page.keyboard.press('Enter')
     await page.keyboard.type('/')

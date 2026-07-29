@@ -112,6 +112,14 @@ xattr -cr /Applications/ICEFiction.app
 dmg가 나오는데 그게 공개 릴리스로 나가면 안 되기 때문이다. 해당 태그의 릴리스가 아직 없으면
 `--generate-notes`로 만들고 붙인다.
 
+> **Windows exe는 별도 워크플로**(`.github/workflows/build-win.yml`, `windows-latest`)가 만든다.
+> 트리거가 같아서 `v*` 태그 하나로 dmg·exe가 함께 나온다 — 예전처럼 Windows 기기에서 손으로
+> 빌드해 올릴 필요가 없다. 이쪽은 **서명 조건이 없다**: Windows 코드 서명 인증서가 없어 무서명이
+> 기본이고, 조건을 걸면 exe가 영구히 안 붙기 때문이다(설치 시 SmartScreen 경고는 그대로).
+>
+> 두 워크플로가 같은 태그에서 동시에 도는 만큼 릴리스를 둘이 같이 만들려 할 수 있어, 양쪽 다
+> `gh release create` 실패 시 상대가 만든 릴리스를 다시 확인하는 방어를 넣어 뒀다.
+
 > **Intel(x64)은 매트릭스에서 뺐다.** `macos-13` 라벨이 GitHub 러너 목록에서 사라져 그 잡에
 > 러너가 배정되지 않고 `queued`로 방치된다(2026-07-26 실행이 14시간 넘게 대기, 같은 실행의
 > arm64 잡은 그 사이 성공). `fail-fast: false`라 arm64 산출물은 나오지만 워크플로 전체가

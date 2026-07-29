@@ -1,0 +1,86 @@
+# Windows 설치 파일(exe) 빌드 — GitHub Windows 러너에서 NSIS 인스톨러를 뽑는다.
+# electron-builder의 win 타깃(NSIS)은 Windows 러너에서 돌리는 게 가장 확실하다.
+#
+# 왜 별도 파일인가 — build-mac.yml 은 macOS 러너 전용 스텝(notarytool·stapler·spctl)으로 채워져
+# 있어 한 파일에 섞으면 조건문만 늘어난다. 트리거를 같게 맞춰 뒀으니 태그 하나로 둘 다 돈다.
+#
+# 서명은 하지 않는다 — Windows 코드 서명 인증서(연 비용)가 없어서다. 그래서 설치할 때
+# SmartScreen이 "Windows의 PC 보호" 경고를 낸다(추가 정보 → 실행). macOS 쪽 공증과 달리
+# 이건 인증서를 사면 그때 배선하면 되는 일이고, 지금까지 배포해 온 상태와 같다.
+name: build-win
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    # 태그 릴리스에 exe를 첨부하려면 기본 토큰에 쓰기 권한이 필요하다.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 타입체크
+        run: npm run typecheck
+
+      - name: 유닛 테스트
+        run: npm test
+
+      # electron-builder는 out/ 번들을 패키징만 한다 — 번들 생성은 electron-vite가 한다.
+      # 이 단계를 빼면 app.asar에 out/main/index.js가 없어 "entry file ... corrupted"로 깨진다.
+      - name: 번들 빌드 (electron-vite)
+        run: npm run build
+
+      # CSC_IDENTITY_AUTO_DISCOVERY=false — 러너에 우연히 있는 인증서를 집어 서명을 시도하다
+      # 실패하는 일을 막는다(무서명이 의도된 상태다).
+      - name: exe 빌드 (NSIS)
+        run: npx electron-builder --win --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: exe 업로드 (Actions 아티팩트 — 90일 보관, 빌드 확인용)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ICEFiction-win-x64
+          path: release/*.exe
+          if-no-files-found: error
+
+      # 태그 릴리스에 exe를 붙인다. dmg와 달리 서명 조건이 없다 — 무서명이 이 플랫폼의 기본이라
+      # 조건을 걸면 exe가 영구히 릴리스에 안 붙는다.
+      #
+      # shell: bash — Windows 러너의 기본 셸은 PowerShell이라 아래 문법이 통하지 않는다.
+      # Git Bash가 기본 설치돼 있어 그대로 쓸 수 있다.
+      - name: 릴리스에 exe 첨부
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXE=$(ls release/*.exe)
+          echo "첨부 대상: $EXE → $GITHUB_REF_NAME"
+          # 태그만 밀고 릴리스를 안 만든 경우를 대비해 없으면 만든다.
+          # build-mac 잡과 동시에 돌아 둘이 같이 만들려 할 수 있으므로, 실패하면
+          # 상대가 먼저 만든 것으로 보고 존재 여부를 다시 확인한다(경쟁 상태 방어).
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "릴리스가 없어 새로 만든다."
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
+              || gh release view "$GITHUB_REF_NAME" >/dev/null
+          fi
+          gh release upload "$GITHUB_REF_NAME" "$EXE" --clobber
+          gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[] | "첨부됨: \(.name) \(.size) bytes"'
+        env:
+          GH_TOKEN: ${{ github.token }}

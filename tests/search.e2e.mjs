@@ -11,6 +11,9 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+/** 수정 키 — CodeMirror의 `Mod-` 는 mac에서 Cmd, 그 외에서 Ctrl(editor.e2e.mjs와 같은 이유). */
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control'
+
 async function main() {
   const home = await fs.mkdtemp(join(tmpdir(), 'icefic-search-e2e-'))
   // ICEFICTION_E2E_EXE에 패키지 실행파일(release/win-unpacked/ICEFiction.exe)을 주면
@@ -40,12 +43,12 @@ async function main() {
 
     // 본문 채우기 — 바꾸기 대상 단어 2회 + 정렬 회귀용 문단
     await page.click('.cm-content')
-    await page.keyboard.press('Control+A')
+    await page.keyboard.press(`${MOD}+A`)
     await page.keyboard.type('임시이름이 걸었다. 임시이름이 웃었다.')
     await page.waitForTimeout(2600) // 자동 저장(2s 디바운스)
 
     // ── 1) 에디터 찾기·바꾸기 ──
-    await page.keyboard.press('Control+f')
+    await page.keyboard.press(`${MOD}+f`)
     await page.waitForSelector('.cm-panel.cm-search', { timeout: 4000 })
     const findPh = await page.getAttribute('.cm-panel.cm-search [name=search]', 'placeholder')
     assert.equal(findPh, '찾기', `검색 패널이 한국어가 아님: ${findPh}`)
@@ -84,8 +87,8 @@ async function main() {
 
     // 키 충돌 무회귀 — Ctrl+Shift+L은 여전히 '왼쪽 정렬'이어야 한다(searchKeymap에서 제외했으므로)
     await page.click('.cm-content')
-    await page.keyboard.press('Control+End')
-    await page.keyboard.press('Control+Shift+L')
+    await page.keyboard.press(`${MOD}+End`)
+    await page.keyboard.press(`${MOD}+Shift+L`)
     await page.waitForTimeout(2600) // 자동 저장
     const raw2 = await fs.readFile(join(mdDir, chapterFile), 'utf8')
     assert(raw2.includes('<div align="left">'), `Ctrl+Shift+L이 정렬로 동작하지 않음:\n${raw2}`)
@@ -97,7 +100,7 @@ async function main() {
     const noteBody = ['---', 'type: note', 'title: 단서', '---', '유리케의 반지는 서고 깊은 곳에 있다.'].join('\n')
     await fs.writeFile(join(home, 'ICEFiction', '검색북', 'notes', '단서.md'), noteBody)
 
-    await page.keyboard.press('Control+Shift+F')
+    await page.keyboard.press(`${MOD}+Shift+F`)
     await page.waitForSelector('.search-panel', { timeout: 4000 })
     const focused = await page.evaluate(() => document.activeElement?.tagName)
     assert.equal(focused, 'INPUT', `검색 입력창에 포커스 안 됨: ${focused}`)

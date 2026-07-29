@@ -92,7 +92,7 @@ function Row({ node, depth }: { node: TreeNode; depth: number }): React.ReactEle
           }}
         >
           <span className="binder-caret">{open ? '▾' : '▸'}</span>
-          <span className="binder-folder-icon">🗀</span>
+          <span className="binder-folder-icon">❑</span>
           <span className="binder-name">{node.name}</span>
           <button className="binder-row-add" onClick={onAddInside} title="여기에 문서 추가">
             +
@@ -174,7 +174,7 @@ function SectionHeader({ node }: { node: TreeNode }): React.ReactElement {
       </button>
       <div className="binder-section-tools">
         <button className="binder-add" onClick={onAddFolder} title={`${folderLabel} 추가`}>
-          🗀
+          ❑
         </button>
         <button className="binder-add" onClick={onAddDoc} title={`${label} 추가`}>
           +

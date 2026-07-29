@@ -796,6 +796,77 @@ textarea {
   color: var(--text);
   accent-color: var(--accent-hi);
 }
+/*
+ * 수치 입력(NumberField) — 이름은 왼쪽, [숫자 단위 ▴▾]는 오른쪽, 슬라이더는 그 아래.
+ * 슬라이더로 대충 잡고 숫자칸으로 정확히 맞추는 두 단계를 한 줄 안에서 오갈 수 있게 둔다.
+ */
+.vs-num-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.vs-num-ctrl {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.vs-num-input {
+  width: 44px;
+  padding: 3px 0 3px 7px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums; /* 자릿수가 바뀌어도 칸이 흔들리지 않게 */
+  text-align: right;
+}
+.vs-num-input:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.06);
+}
+.vs-num-unit {
+  display: flex;
+  align-items: center;
+  padding: 0 5px 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.vs-num-arrows {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+}
+.vs-num-arrows button {
+  flex: 1;
+  width: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+}
+.vs-num-arrows button:first-child {
+  border-bottom: 1px solid var(--border);
+}
+.vs-num-arrows button:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+.vs-num-arrows button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.vs-num-off {
+  opacity: 0.5;
+}
 .vs-themes {
   display: flex;
   gap: 6px;

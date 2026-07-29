@@ -42,8 +42,8 @@ export const TYPE_GLYPH: Record<string, string> = {
   world: '🜨',
   note: '✦',
   style: '✍',
-  part: '🗀',
-  folder: '🗀'
+  part: '❑',
+  folder: '❑'
 }
 
 /** 경로의 최상위 섹션(문서 타입·라벨 결정용). */

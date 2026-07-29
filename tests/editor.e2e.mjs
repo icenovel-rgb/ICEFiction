@@ -13,6 +13,13 @@ import { join } from 'node:path'
 
 const TYPED = '폭우가 도시를 삼켰다'
 
+/**
+ * 수정 키 — 앱은 CodeMirror의 `Mod-` 로 바인딩하고, Mod 는 **mac에서 Cmd, 그 외에서 Ctrl** 이다.
+ * 여기서 'Control' 로 고정하면 mac에서는 전체 선택이 아니라 "줄 처음으로 이동"(CM6 mac 키맵의
+ * Ctrl-a)이 실행돼, 원고를 지우지 않은 채 덧입력되면서 뒤 단계가 줄줄이 어긋난다.
+ */
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control'
+
 async function main() {
   const home = await fs.mkdtemp(join(tmpdir(), 'icefic-e2e-'))
   const app = await electron.launch({
@@ -58,7 +65,7 @@ async function main() {
 
     // 한글 입력 (전체 선택 후 교체)
     await page.click('.cm-content')
-    await page.keyboard.press('Control+A')
+    await page.keyboard.press(`${MOD}+A`)
     await page.keyboard.type(TYPED)
     const shown = (await page.textContent('.cm-content')) ?? ''
     assert(shown.includes(TYPED), `에디터에 입력 텍스트가 안 보임: "${shown}"`)
@@ -184,7 +191,7 @@ async function main() {
     await page.click('.binder-file:has-text("첫 장")')
     await page.waitForSelector('.cm-content[contenteditable="true"]', { timeout: 8000 })
     await page.click('.cm-content')
-    await page.keyboard.press('Control+A')
+    await page.keyboard.press(`${MOD}+A`)
     // 표준 마크다운(문서 기준 상대경로) — 첫 장은 manuscript/ 아래이므로 ../assets/…
     await page.keyboard.type('# 큰제목\n![](../assets/images/face.png)\n끝')
 
@@ -243,21 +250,21 @@ async function main() {
     assert(Math.abs(z - 1.3) < 0.001, `zoomBy 반환 이상: ${z}`)
     const z0 = await page.evaluate(() => window.api.zoomReset())
     assert(z0 === 1, `zoomReset 이상: ${z0}`)
-    await page.keyboard.press('Control+Equal')
+    await page.keyboard.press(`${MOD}+Equal`)
     await page.waitForSelector('.zoom-pill', { timeout: 2000 })
     await page.evaluate(() => window.api.zoomReset())
     console.log('  ✓ UI 줌(zoomBy/Reset + Ctrl+= 표시)')
 
     // 구분선(---) 라이브 렌더 — 커서가 다른 줄이면 실제 가로선(.cm-hr)으로 보인다(사용자 지적)
     await page.click('.cm-content')
-    await page.keyboard.press('Control+A')
+    await page.keyboard.press(`${MOD}+A`)
     await page.keyboard.type('첫 줄\n\n---\n\n끝 줄')
     await page.waitForSelector('.cm-hr', { timeout: 4000 })
     console.log('  ✓ 구분선(---) → 실제 가로선 렌더')
 
     // 마크다운 인용문(>) → 인용 블록(.cm-blockquote) + 커서 없는 줄의 '>' 숨김(사용자 지적: 인용문 미작동)
     await page.click('.cm-content')
-    await page.keyboard.press('Control+A')
+    await page.keyboard.press(`${MOD}+A`)
     await page.keyboard.type('> 인용된 문장\n\n일반 문장') // 커서는 마지막 '일반 문장' 줄(인용 줄에서 벗어남)
     await page.waitForSelector('.cm-blockquote', { timeout: 4000 })
     const quoteText = await page.evaluate(() => {
@@ -285,7 +292,7 @@ async function main() {
     // (lang-markdown 기본은 인용을 계속 이어붙여 Enter 3번을 눌러야 나온다 → 모르면 이후 본문이
     //  전부 인용문에 갇힌다. 실측 버그. 화면은 '>'를 숨기므로 **저장된 원본**으로 검증해야 한다.)
     await page.click('.cm-content')
-    await page.keyboard.press('Control+A')
+    await page.keyboard.press(`${MOD}+A`)
     await page.keyboard.type('> 인용문입니다')
     await page.keyboard.press('Enter')
     await page.keyboard.press('Enter')
@@ -309,7 +316,7 @@ async function main() {
 
     // ── 탭키 들여쓰기 — 전각 공백(U+3000). 마크다운 코드블록 오인을 피하는 한글 원고 관례 ──
     await page.click('.cm-content')
-    await page.keyboard.press('Control+A')
+    await page.keyboard.press(`${MOD}+A`)
     await page.keyboard.type('들여쓸 문장')
     await page.keyboard.press('Home')
     await page.keyboard.press('Tab')
@@ -338,7 +345,7 @@ async function main() {
 
     // ── 선택한 부분만 정렬 — 드래그 선택 → <div align="center">로 파일에 기록, 태그는 화면에서 숨김 ──
     await page.click('.cm-content')
-    await page.keyboard.press('Control+A')
+    await page.keyboard.press(`${MOD}+A`)
     // 가운데 갈 문단은 **두 줄**로 — 한 줄짜리로 테스트하면 "첫 줄만 정렬 누락" 버그를 놓친다(실측).
     await page.keyboard.type('첫 문단\n\n가운데 갈 문단\n둘째 줄도 가운데\n\n끝 문단')
     // 문단 일부만 드래그 선택 → 문단 전체가 정렬돼야 한다

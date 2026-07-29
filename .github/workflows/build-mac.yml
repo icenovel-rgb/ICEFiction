@@ -132,9 +132,12 @@ jobs:
           DMG=$(ls release/*.dmg)
           echo "첨부 대상: $DMG → $GITHUB_REF_NAME"
           # 태그만 밀고 릴리스를 안 만든 경우를 대비해 없으면 만든다.
+          # build-win 잡과 동시에 돌아 둘이 같이 만들려 할 수 있으므로, 실패하면
+          # 상대가 먼저 만든 것으로 보고 존재 여부를 다시 확인한다(경쟁 상태 방어).
           if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "릴리스가 없어 새로 만든다."
-            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
+              || gh release view "$GITHUB_REF_NAME" >/dev/null
           fi
           gh release upload "$GITHUB_REF_NAME" "$DMG" --clobber
           gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[] | "첨부됨: \(.name) \(.size) bytes"'

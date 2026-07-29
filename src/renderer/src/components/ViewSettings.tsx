@@ -14,13 +14,14 @@ import {
 } from '../state/settings'
 import { getEditorView } from '../lib/editorBridge'
 import { alignSelection } from '../lib/editorCommands'
+import { NumberField } from './NumberField'
 import type { BlockAlign } from '../../../shared/align'
 
 /** 문단 정렬 버튼 — 좌/가운데/우/양쪽(§8.1). hint = 선택 문단 정렬 단축키. */
 const ALIGN_OPTIONS: { value: TextAlign; label: string; glyph: string; hint: string }[] = [
-  { value: 'left', label: '왼쪽', glyph: '⯇', hint: 'Ctrl+Shift+L' },
+  { value: 'left', label: '왼쪽', glyph: '◂', hint: 'Ctrl+Shift+L' },
   { value: 'center', label: '가운데', glyph: '≡', hint: 'Ctrl+Shift+E' },
-  { value: 'right', label: '오른쪽', glyph: '⯈', hint: 'Ctrl+Shift+R' },
+  { value: 'right', label: '오른쪽', glyph: '▸', hint: 'Ctrl+Shift+R' },
   { value: 'justify', label: '양쪽', glyph: '☰', hint: 'Ctrl+Shift+J' }
 ]
 
@@ -136,29 +137,24 @@ export function ViewSettings(): React.ReactElement {
         </select>
       </label>
 
-      <label className="vs-field">
-        <span>글자 크기 — {s.fontSizePx}px</span>
-        <input
-          type="range"
-          min={13}
-          max={26}
-          step={1}
-          value={s.fontSizePx}
-          onChange={(e) => s.patch({ fontSizePx: Number(e.target.value) })}
-        />
-      </label>
+      <NumberField
+        label="글자 크기"
+        unit="px"
+        value={s.fontSizePx}
+        min={13}
+        max={26}
+        step={1}
+        onChange={(v) => s.patch({ fontSizePx: v })}
+      />
 
-      <label className="vs-field">
-        <span>줄 간격 — {s.lineHeight.toFixed(1)}</span>
-        <input
-          type="range"
-          min={1.4}
-          max={2.6}
-          step={0.1}
-          value={s.lineHeight}
-          onChange={(e) => s.patch({ lineHeight: Number(e.target.value) })}
-        />
-      </label>
+      <NumberField
+        label="줄 간격"
+        value={s.lineHeight}
+        min={1.4}
+        max={2.6}
+        step={0.1}
+        onChange={(v) => s.patch({ lineHeight: v })}
+      />
 
       <div className="vs-field">
         <span>문단 정렬 — 문서 전체 기본값</span>
@@ -177,23 +173,16 @@ export function ViewSettings(): React.ReactElement {
         </div>
       </div>
 
-      <div className="vs-field">
-        <span>
-          문단 간격 — {s.paraGapEm.toFixed(1)}em
-          {s.paraGapEm === 0 && ' (없음)'}
-        </span>
-        <input
-          type="range"
-          min={0}
-          max={2}
-          step={0.1}
-          value={s.paraGapEm}
-          onChange={(e) => s.patch({ paraGapEm: Number(e.target.value) })}
-        />
-        <span className="insp-hint">
-          문단 사이가 벌어집니다 — 빈 줄을 넣으려고 엔터를 두 번 치지 않아도 됩니다.
-        </span>
-      </div>
+      <NumberField
+        label={`문단 간격${s.paraGapEm === 0 ? ' (없음)' : ''}`}
+        unit="em"
+        value={s.paraGapEm}
+        min={0}
+        max={2}
+        step={0.1}
+        hint="문단 사이가 벌어집니다 — 빈 줄을 넣으려고 엔터를 두 번 치지 않아도 됩니다."
+        onChange={(v) => s.patch({ paraGapEm: v })}
+      />
 
       <div className="vs-field">
         <span>문단 첫 줄</span>
@@ -211,20 +200,15 @@ export function ViewSettings(): React.ReactElement {
           ))}
         </div>
         {s.firstLineMode !== 'none' && (
-          <label className="vs-field">
-            <span>
-              {s.firstLineMode === 'indent' ? '들여쓰기' : '내어쓰기'} 폭 —{' '}
-              {s.firstLineEm.toFixed(1)}em
-            </span>
-            <input
-              type="range"
-              min={0.5}
-              max={3}
-              step={0.5}
-              value={s.firstLineEm}
-              onChange={(e) => s.patch({ firstLineEm: Number(e.target.value) })}
-            />
-          </label>
+          <NumberField
+            label={`${s.firstLineMode === 'indent' ? '들여쓰기' : '내어쓰기'} 폭`}
+            unit="em"
+            value={s.firstLineEm}
+            min={0.5}
+            max={3}
+            step={0.5}
+            onChange={(v) => s.patch({ firstLineEm: v })}
+          />
         )}
         <span className="insp-hint">
           보기 설정입니다 — 원고 파일에는 공백이 들어가지 않습니다. 실제 글자로 넣으려면 Tab(전각

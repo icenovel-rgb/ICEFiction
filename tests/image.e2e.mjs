@@ -101,14 +101,26 @@ async function main() {
     await page.waitForSelector('.dialog-input', { timeout: 5000 })
     await page.fill('.dialog-input', '김철수')
     await page.click('.dialog-confirm')
+    // 만들기가 끝나 바인더에 실제로 나타난 뒤에 연다 — 바로 클릭하면 아직 없는 문서를 집는다.
+    await page.waitForSelector('.binder-file:has-text("김철수")', { timeout: 8000 })
     await page.click('.binder-file:has-text("김철수")')
     await page.click('.rightpanel-tabs button:has-text("인스펙터")')
 
     await page.click('.insp-gen-image')
     await page.waitForSelector('.studio', { timeout: 5000 })
-    // 시트에서 뽑은 프롬프트 초안이 채워져 있어야 한다
-    const draft = await page.inputValue('.studio-left textarea')
-    assert(draft.includes('김철수'), `프롬프트 초안에 문서 이름이 없음: ${draft}`)
+    // 시트에서 뽑은 프롬프트 초안이 채워져 있어야 한다.
+    // ★ 곧바로 읽지 말 것 — .studio 가 붙는 시점과 초안이 state로 반영되는 시점이 다르다.
+    //   즉시 읽으면 빈 문자열이 잡혀 "초안이 안 만들어졌다"고 오진한다(2026-07-29 실측).
+    await page
+      .waitForFunction(
+        () => (document.querySelector('.studio-left textarea')?.value ?? '').includes('김철수'),
+        undefined,
+        { timeout: 5000 }
+      )
+      .catch(async () => {
+        const got = await page.inputValue('.studio-left textarea')
+        assert.fail(`프롬프트 초안에 문서 이름이 없음: ${JSON.stringify(got)}`)
+      })
     console.log('  ✓ 스튜디오 열림 + 시트 기반 프롬프트 초안')
 
     await page.click('.studio-actions .dialog-confirm') // 그리기
@@ -139,6 +151,12 @@ async function main() {
     await page.hover('.book-card') // 카드 도구는 hover에서만 보인다(display:none)
     await page.click('.book-tools button[title^="AI로 표지"]')
     await page.waitForSelector('.studio', { timeout: 5000 })
+    // 표지 초안은 getBookMeta(비동기) 뒤에 채워진다 — 빈 프롬프트로 그리기를 누르지 않도록 기다린다.
+    await page.waitForFunction(
+      () => (document.querySelector('.studio-left textarea')?.value ?? '').length > 0,
+      undefined,
+      { timeout: 5000 }
+    )
     console.log('  ✓ 표지 스튜디오 열림')
 
     await page.click('.studio-actions .dialog-confirm') // 그리기

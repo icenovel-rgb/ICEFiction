@@ -28,6 +28,7 @@ import { useImageStudio } from '../ui/imageStudio'
 import { getEditorView, insertOrReplace } from '../lib/editorBridge'
 import { drawTitledCover, type TitlePos } from '../lib/coverCompose'
 import { assetUrl } from '../lib/media'
+import { NumberField } from './NumberField'
 
 type Phase = 'setup' | 'running' | 'done' | 'error'
 
@@ -431,17 +432,16 @@ function Studio(): React.ReactElement | null {
                         <option value="#111111">검은 글자</option>
                       </select>
                     </div>
-                    <label className="studio-field">
-                      <span>제목 크기 — {titleSize}%</span>
-                      <input
-                        type="range"
-                        min={4}
-                        max={16}
-                        value={titleSize}
-                        onChange={(e) => setTitleSize(Number(e.target.value))}
-                        disabled={!titleOn}
-                      />
-                    </label>
+                    <NumberField
+                      label="제목 크기"
+                      unit="%"
+                      value={titleSize}
+                      min={4}
+                      max={16}
+                      step={1}
+                      disabled={!titleOn}
+                      onChange={setTitleSize}
+                    />
                     <button
                       className="dialog-confirm"
                       onClick={() => void onSaveCover()}

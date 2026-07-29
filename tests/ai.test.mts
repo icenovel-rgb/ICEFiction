@@ -140,16 +140,28 @@ async function main(): Promise<void> {
   assert(an.some((b) => b.type === 'text' && b.text.includes('research.pdf')), 'Anthropic 텍스트 첨부 누락')
   // 첨부 없으면 문자열 그대로(하위호환)
   assert.equal(toOpenAIContent({ role: 'user', content: '그냥' }), '그냥')
-  // CLI는 이미지를 못 보므로 안내 문구, 텍스트는 인라인
+  // CLI 계열(agy·codex·claude)은 이미지를 프롬프트로 못 받지만 **파일은 직접 열 수 있다** —
+  // 그래서 "못 본다"가 아니라 경로를 주고 열어 보라고 시킨다. 텍스트 첨부는 그대로 인라인.
   const cliImg = attachmentsToText({
     role: 'user',
     content: '봐줘',
     attachments: [{ kind: 'image', name: 'a.png', path: 'assets/images/a.png' }]
   })
-  assert(cliImg.includes('직접 보지 못합니다'), 'CLI 이미지 미지원 안내 없음')
+  assert(cliImg.includes('a.png'), 'CLI 이미지 안내에 파일 이름 없음')
+  assert(cliImg.includes('assets/images/a.png'), 'CLI 이미지 안내에 경로 없음 — 열어볼 수가 없다')
+  assert(cliImg.includes('열어'), `CLI 이미지 안내가 파일을 열라고 하지 않음: ${cliImg}`)
+  // 절대경로가 있으면 그걸 준다(실제 운영 경로 — CLI의 작업 폴더가 프로젝트 밖일 수 있다)
+  const cliImgAbs = attachmentsToText({
+    role: 'user',
+    content: '봐줘',
+    attachments: [
+      { kind: 'image', name: 'a.png', path: 'assets/images/a.png', absPath: '/tmp/book/a.png' }
+    ]
+  })
+  assert(cliImgAbs.includes('/tmp/book/a.png'), 'absPath가 있으면 절대경로를 줘야 한다')
   const cliTxt = attachmentsToText(textMsg)
   assert(cliTxt.includes('핵심 내용'), 'CLI 텍스트 첨부 인라인 누락')
-  ok('첨부 변환: OpenAI(image_url·text) · Anthropic(image·text) · CLI(이미지 안내·텍스트 인라인)')
+  ok('첨부 변환: OpenAI(image_url·text) · Anthropic(image·text) · CLI(경로 안내·텍스트 인라인)')
 
   // 8) CLI flavor 감지 — 명령어로 claude/codex/generic 구분(실제 실행 없이 이름·모델목록만)
   assert(new CliAI('claude').name.toLowerCase().includes('claude'), 'claude flavor 이름')

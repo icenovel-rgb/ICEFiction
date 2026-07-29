@@ -154,7 +154,7 @@ export function SectionGallery(): React.ReactElement | null {
         <div className="gal-folders">
           {folders.map((f) => (
             <button key={f.path} className="gal-folder" onClick={() => openGallery(f.path)}>
-              🗀 {f.name}
+              ❑ {f.name}
             </button>
           ))}
         </div>
