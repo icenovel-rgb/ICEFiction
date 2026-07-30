@@ -2887,3 +2887,180 @@ li[aria-selected] .ice-slash-outcome {
   background: var(--accent-hi);
   border-color: var(--accent-hi);
 }
+
+/* ── 문법·단축키 도움말 창(상단바 ? · F1) ──
+   마크다운 표준 문법과 이 앱만의 규칙을 한 화면에. 내용이 길어 시트 자체가 스크롤된다. */
+.ws-help {
+  font-weight: 700;
+  width: 26px;
+  text-align: center;
+}
+.help-backdrop {
+  z-index: 420; /* 입력 모달(400)보다 위 — 도움말은 아무 때나 덮어도 된다 */
+}
+.help-sheet {
+  width: 760px;
+  max-width: 94vw;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.help-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--toolbar);
+}
+.help-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.help-legend {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.help-x {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 15px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.help-x:hover {
+  color: var(--text);
+}
+.help-body {
+  overflow-y: auto;
+  padding: 6px 18px 18px;
+}
+.help-sec {
+  margin-top: 18px;
+}
+.help-sec h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-hi);
+  letter-spacing: 0.02em;
+}
+.help-intro {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.help-sec table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.help-sec td {
+  padding: 6px 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text);
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+.help-sec td:first-child {
+  white-space: nowrap;
+  width: 1%;
+  padding-right: 14px;
+}
+.help-sec code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  color: var(--accent-hi);
+  background: var(--accent-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+/* 원고 파일에 남는 문법인지, 화면에만 적용되는 보기 설정인지 — 가장 헷갈리는 구분이라 색을 나눈다. */
+.help-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+.help-tag.in-file {
+  background: rgba(122, 114, 240, 0.18);
+  color: var(--accent-hi);
+  border: 1px solid rgba(122, 114, 240, 0.4);
+}
+.help-tag.in-view {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.help-gotchas ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.help-gotchas li {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.help-gotchas b {
+  color: var(--text);
+}
+:root[data-app-mode='light'] .help-sec code,
+:root[data-app-mode='light'] .help-sec h3,
+:root[data-app-mode='light'] .help-tag.in-file {
+  color: #4038a8;
+}
+:root[data-app-mode='light'] .help-tag.in-view {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* 보기 탭에서 도움말 창을 여는 단추 */
+.vs-help-open {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  background: var(--btn-bg);
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.vs-help-open:hover {
+  background: var(--btn-hover);
+  border-color: var(--accent-hi);
+}
+.vs-mdhelp kbd {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+/* 연속 대사 미리보기 — 문단 간격 미리보기와 같은 판이지만 대사 예시라 조금 작게. */
+.vs-preview-dialogue {
+  font-size: 12px;
+}
+.vs-switch code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  color: var(--accent-hi);
+  background: var(--accent-soft);
+  padding: 1px 4px;
+  border-radius: 3px;
+}

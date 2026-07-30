@@ -433,6 +433,228 @@ async function main() {
     assert(sbPath.includes('김철수'), `갤러리 카드 클릭이 그 문서를 열지 않음: ${sbPath}`)
     console.log('  ✓ 섹션 갤러리: 카드 클릭 → 해당 문서가 에디터로 열림')
 
+    // ── 따옴표 자동 짝(§6.1c) — 대사를 가장 많이 두드리므로 손이 먼저 가는 기능 ──
+    // 여는 따옴표 하나에 짝이 생기고, 닫을 때 한 번 더 치면 **짝을 건너뛴다**(""가 두 벌 생기면 안 된다).
+    await page.click('.binder-file:has-text("첫 장")')
+    await page.waitForSelector('.cm-content[contenteditable="true"]', { timeout: 8000 })
+    await page.click('.cm-content')
+    // 문서를 **지워서** 비운다 — 선택 상태에서 따옴표를 치면 '감싸기'가 되므로(바로 아래에서 검증)
+    // 여기서 Ctrl+A 후 바로 치면 원고 전체가 따옴표에 감싸인다.
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.press('Delete')
+    await page.keyboard.type('"')
+    const paired = await page.evaluate(() => {
+      const l = document.querySelector('.cm-line')
+      return l ? l.textContent : ''
+    })
+    assert.equal(paired, '""', `따옴표 자동 짝이 안 생김: ${JSON.stringify(paired)}`)
+    await page.keyboard.type('어서 와.')
+    await page.keyboard.type('"') // 손으로 닫기 → 건너뛰기(한 벌만 남아야 한다)
+    const closed = await page.evaluate(() => {
+      const l = document.querySelector('.cm-line')
+      return l ? l.textContent : ''
+    })
+    assert.equal(closed, '"어서 와."', `닫는 따옴표 건너뛰기 실패(짝이 두 벌?): ${JSON.stringify(closed)}`)
+    console.log('  ✓ 따옴표 자동 짝: " → "" + 손으로 닫으면 건너뛰기')
+
+    // 고른 글을 따옴표로 감싸기 — 서술 한 줄을 대사로 바꾸는 손놀림
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.press('Delete')
+    await page.keyboard.type('어서 와')
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Shift+End')
+    await page.keyboard.type('"')
+    const wrapped = await page.evaluate(() => {
+      const l = document.querySelector('.cm-line')
+      return l ? l.textContent : ''
+    })
+    assert.equal(wrapped, '"어서 와"', `선택 감싸기 실패: ${JSON.stringify(wrapped)}`)
+    console.log('  ✓ 따옴표 자동 짝: 고른 글을 통째로 감싸기')
+
+    // 빈 짝 사이 Backspace → 두 부호가 함께 사라진다
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.press('Delete')
+    await page.keyboard.type("'")
+    await page.keyboard.press('Backspace')
+    // 문서가 비면 그 자리에 안내(placeholder)가 그려지므로 '빈 문자열'이 아니라 **부호가 없음**을 본다.
+    const afterBs = await page.evaluate(() => {
+      const l = document.querySelector('.cm-line')
+      return l ? l.textContent : ''
+    })
+    assert(
+      !afterBs.includes("'"),
+      `빈 짝 Backspace가 한 짝만 지움(따옴표가 남음): ${JSON.stringify(afterBs)}`
+    )
+    console.log('  ✓ 따옴표 자동 짝: 빈 짝("") 사이 Backspace → 둘 다 삭제')
+
+    // ── 줄 앞 `--` → 불릿(•) · `-` 세 번 → 구분선(---) (§6.1c) ──
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.type('--항목 하나')
+    const bulletLine = await page.evaluate(() => {
+      const l = document.querySelector('.cm-line')
+      return l ? l.textContent : ''
+    })
+    assert.equal(bulletLine, '• 항목 하나', `줄 앞 -- 가 불릿이 안 됨: ${JSON.stringify(bulletLine)}`)
+    console.log('  ✓ 불릿: 줄 앞 `--` → `• ` (파일에도 • 로 기록)')
+
+    /**
+     * ★회귀(사용자 신고): 문단 아래에서 줄표를 두 번 치면 **위 문단이 커졌다**.
+     * 원인은 마크다운 Setext 제목 — 문단 바로 아래 `--`/`---` 줄이 위 문단을 제목으로 만든다.
+     * 이제 Setext 파서를 껐으므로 위 문단은 본문 크기 그대로고, `---`은 가로 구분선이 된다.
+     */
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.type('비가 내렸다')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('---') // 두 번째 -에서 불릿, 세 번째 -에서 구분선으로 되돌아온다
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('그는 우산을 접었다')
+    const sizes = await page.evaluate(() => {
+      const line = [...document.querySelectorAll('.cm-line')].find((l) =>
+        (l.textContent || '').includes('비가 내렸다')
+      )
+      const el = line?.querySelector('span') ?? line
+      return {
+        measured: parseFloat(getComputedStyle(el).fontSize),
+        base: parseFloat(getComputedStyle(document.querySelector('.cm-content')).fontSize)
+      }
+    })
+    assert(
+      Math.abs(sizes.measured - sizes.base) < 0.6,
+      `줄표 두 번에 위 문단이 제목으로 커짐(Setext 회귀): ${sizes.measured}px vs 본문 ${sizes.base}px`
+    )
+    await page.waitForSelector('.cm-hr', { timeout: 4000 }) // 세 번 → 진짜 구분선
+    console.log('  ✓ 회귀: 줄표 아래 문단이 제목으로 커지지 않음 + `-` 세 번 → 구분선')
+
+    // ── Shift+Enter — 문단 간격 없는 줄바꿈(줄간격만) ──
+    await page.click('.cm-content')
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.type('첫 줄')
+    await page.keyboard.press('Shift+Enter')
+    await page.keyboard.type('둘째 줄')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('새 문단')
+    await page.waitForTimeout(2800)
+    const rawSoft = await fs.readFile(join(mdDir, files[0]), 'utf8')
+    assert(
+      rawSoft.includes('첫 줄  \n둘째 줄'),
+      `Shift+Enter가 마크다운 하드 브레이크(줄 끝 공백 2칸)로 저장되지 않음:\n${JSON.stringify(rawSoft)}`
+    )
+    const gaps = await page.evaluate(() => {
+      const find = (t) =>
+        [...document.querySelectorAll('.cm-line')].find((l) => (l.textContent || '').includes(t))
+      const soft = find('첫 줄')
+      const normal = find('둘째 줄')
+      return {
+        softClass: soft?.className ?? '',
+        softPad: parseFloat(getComputedStyle(soft).paddingBottom),
+        normalPad: parseFloat(getComputedStyle(normal).paddingBottom)
+      }
+    })
+    assert(gaps.softClass.includes('cm-soft-break'), `Shift+Enter 줄 표시 없음: ${gaps.softClass}`)
+    assert.equal(gaps.softPad, 0, `Shift+Enter 줄에 문단 간격이 붙음: ${gaps.softPad}px`)
+    assert(gaps.normalPad > 0, `보통 문단의 간격이 사라짐(회귀): ${gaps.normalPad}px`)
+    console.log('  ✓ Shift+Enter: 줄 끝 공백 2칸으로 저장 + 그 줄만 문단 간격 0')
+
+    // ── 보기 옵션: 대사가 이어질 땐 붙이기 ──
+    await page.click('.cm-content')
+    await page.keyboard.press(`${MOD}+A`)
+    // 따옴표는 자동 짝이 붙으므로 닫는 따옴표까지 그대로 쳐도 한 벌만 남는다(위에서 검증).
+    await page.keyboard.type('그는 문을 열었다.\n"어서 와."\n"오래 기다렸어?"\n그는 웃었다.')
+    await page.click('.rightpanel-tabs button:has-text("보기")')
+    const tightSwitch = page.locator('.vs-switch:has-text("대사가 이어질 땐 붙이기") input')
+    await tightSwitch.click()
+    const tightVar = () =>
+      page.evaluate(() => document.documentElement.style.getPropertyValue('--paper-tight-gap').trim())
+    assert.equal(await tightVar(), '0px', `연속 대사 옵션이 CSS 변수에 반영 안 됨: ${await tightVar()}`)
+    const dlg = await page.evaluate(() => {
+      const find = (t) =>
+        [...document.querySelectorAll('.cm-line')].find((l) => (l.textContent || '').includes(t))
+      const first = find('어서 와')
+      const last = find('오래 기다렸어')
+      const narration = find('그는 문을 열었다')
+      return {
+        firstPad: parseFloat(getComputedStyle(first).paddingBottom),
+        lastPad: parseFloat(getComputedStyle(last).paddingBottom),
+        narrationPad: parseFloat(getComputedStyle(narration).paddingBottom),
+        lastClass: last?.className ?? ''
+      }
+    })
+    assert.equal(dlg.firstPad, 0, `이어지는 대사 사이 간격이 남음: ${dlg.firstPad}px`)
+    assert(dlg.narrationPad > 0, `서술→대사 경계 간격이 사라짐: ${dlg.narrationPad}px`)
+    assert(
+      !dlg.lastClass.includes('cm-tight-dialogue') && dlg.lastPad > 0,
+      `마지막 대사→서술 경계 간격이 사라짐: ${dlg.lastPad}px / ${dlg.lastClass}`
+    )
+    console.log('  ✓ 연속 대사: 대사끼리 간격 0 · 서술과 맞닿는 앞뒤 경계는 유지')
+
+    await tightSwitch.click() // 원복 — 끄면 그 줄도 보통 간격으로 돌아온다
+    assert.notEqual(await tightVar(), '0px', '연속 대사 옵션을 꺼도 0으로 남음')
+    const restored = await page.evaluate(() => {
+      const l = [...document.querySelectorAll('.cm-line')].find((x) =>
+        (x.textContent || '').includes('어서 와')
+      )
+      return parseFloat(getComputedStyle(l).paddingBottom)
+    })
+    assert(restored > 0, `옵션을 꺼도 간격이 0으로 남음: ${restored}px`)
+    console.log('  ✓ 연속 대사: 옵션을 끄면 즉시 원복(데코 재조립 없이 CSS 변수로)')
+
+    // ── Ctrl+B / Ctrl+I / Ctrl+U — 굵게·기울임·밑줄(밑줄은 마크다운에 없어 <u>) ──
+    await page.click('.cm-content')
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.type('굵게 갈 말\n밑줄 갈 말\n다른 줄')
+    await page.locator('.cm-line', { hasText: '굵게 갈 말' }).click()
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Shift+End')
+    await page.keyboard.press(`${MOD}+B`)
+    await page.locator('.cm-line', { hasText: '밑줄 갈 말' }).click()
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Shift+End')
+    await page.keyboard.press(`${MOD}+U`)
+    await page.locator('.cm-line', { hasText: '다른 줄' }).click() // 커서를 옮겨 기호 숨김 확인
+    await page.waitForTimeout(2800)
+    const rawMark = await fs.readFile(join(mdDir, files[0]), 'utf8')
+    assert(rawMark.includes('**굵게 갈 말**'), `Ctrl+B가 **로 기록되지 않음:\n${rawMark}`)
+    assert(rawMark.includes('<u>밑줄 갈 말</u>'), `Ctrl+U가 <u>로 기록되지 않음:\n${rawMark}`)
+    await page.waitForSelector('.cm-u', { timeout: 4000 })
+    const underline = await page.evaluate(() => {
+      const el = document.querySelector('.cm-u')
+      return { text: el.textContent, deco: getComputedStyle(el).textDecorationLine }
+    })
+    assert.equal(underline.text, '밑줄 갈 말', `밑줄 범위가 어긋남: ${underline.text}`)
+    assert(underline.deco.includes('underline'), `밑줄이 그려지지 않음: ${underline.deco}`)
+    const visibleU = (await page.textContent('.cm-content')) ?? ''
+    assert(!visibleU.includes('<u>'), `밑줄 태그가 화면에 노출됨: ${visibleU}`)
+    console.log('  ✓ 굵게/밑줄: **굵게** · <u>밑줄</u> 기록 + 태그 숨기고 밑줄로 렌더')
+
+    /**
+     * 밑줄 **안쪽을 고칠 수 있어야** 한다. mark 데코까지 atomicRanges에 넣으면 커서가 그 범위를
+     * 통째로 건너뛰어 글자가 태그 밖에 떨어진다(실측 함정) → 실제로 한 글자를 넣어 확인한다.
+     */
+    await page.locator('.cm-u').click()
+    await page.keyboard.type('X')
+    await page.waitForTimeout(2800)
+    const rawInside = await fs.readFile(join(mdDir, files[0]), 'utf8')
+    assert(
+      /<u>[^<\n]*X[^<\n]*<\/u>/.test(rawInside),
+      `밑줄 안쪽에 글자를 넣을 수 없음(아톰 회귀) — X가 태그 밖으로 떨어짐:\n${rawInside}`
+    )
+    console.log('  ✓ 밑줄 안쪽 편집 가능(mark 데코는 아톰이 아니어야 한다)')
+
+    // ── 도움말 창(F1 · 상단바 ?) — 마크다운 + 이 앱 문법을 한 화면에 ──
+    await page.keyboard.press('F1')
+    await page.waitForSelector('.help-sheet', { timeout: 4000 })
+    const helpText = (await page.textContent('.help-sheet')) ?? ''
+    for (const must of ['Shift+Enter', '전각', '불릿', '밑줄']) {
+      assert(helpText.includes(must), `도움말에 "${must}" 설명이 없음`)
+    }
+    await page.keyboard.press('Escape')
+    await page.waitForSelector('.help-sheet', { state: 'detached', timeout: 3000 })
+    await page.click('.ws-help')
+    await page.waitForSelector('.help-sheet', { timeout: 3000 })
+    await page.click('.help-x')
+    await page.waitForSelector('.help-sheet', { state: 'detached', timeout: 3000 })
+    console.log('  ✓ 도움말: F1·상단바 ? 로 열림, Esc·✕ 로 닫힘 + 이 앱 문법 포함')
+
     // 집중 모드 — 양쪽 패널 접기(원고만) → 다시 펼치기
     await page.click('.ws-focus')
     await page.waitForSelector('.binder', { state: 'detached', timeout: 3000 })
@@ -444,7 +666,7 @@ async function main() {
     console.log('  ✓ 집중 모드 해제: 패널 복원')
 
     console.log(
-      '\n✅ 에디터 E2E: 32개 검증 통과 (…+ 기본글꼴 + 인용문탈출 + 탭들여쓰기 + 선택문단정렬 + 섹션갤러리)'
+      '\n✅ 에디터 E2E: 43개 검증 통과 (…+ 따옴표자동짝 + 불릿/구분선 + Shift+Enter + 연속대사 + 굵게/밑줄 + 도움말)'
     )
   } finally {
     await app.close()

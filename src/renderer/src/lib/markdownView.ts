@@ -5,7 +5,7 @@
  *  · 이미지: ![[경로]] / ![](경로)를 실제 <img>로 인라인 렌더 (커서가 그 줄이면 소스 노출→편집)
  */
 import { syntaxHighlighting, HighlightStyle, syntaxTree } from '@codemirror/language'
-import { type EditorState, StateField } from '@codemirror/state'
+import { type EditorState, StateField, type Text } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -17,6 +17,7 @@ import {
 import { tags as t } from '@lezer/highlight'
 import { EMBED_RE, embedToRootRel } from '../../../shared/mdEmbed'
 import { scanAlignBlocks, type BlockAlign } from '../../../shared/align'
+import { gapKindAt, type GapKind } from '../../../shared/paraGap'
 import { useStore } from '../state/store'
 import { useLightbox } from '../ui/lightbox'
 
@@ -152,20 +153,72 @@ function markHideDecos(view: EditorView, add: (from: number, to: number, d: Deco
   }
 }
 
-// ── 빈 줄 표시 ──
-// 문단 간격(§8.1)은 `.cm-line`의 아래 여백으로 준다. 그런데 마크다운 원고에는 문단 사이에 빈 줄이
-// 이미 있어서, 빈 줄에도 여백이 붙으면 기존 원고가 두 배로 벌어진다. 빈 줄만 표시해 여백을 0으로 되돌린다.
-const blankLine = Decoration.line({ class: 'cm-blank-line' })
+// ── 문단 간격을 없앨 줄 표시(§8.1) ──
+// 문단 간격은 `.cm-line`의 아래 여백으로 준다. 여백을 0으로 되돌려야 하는 줄이 세 가지다.
+//  · 빈 줄            원고에 이미 있던 빈 줄까지 벌어지면 기존 원고가 두 배로 뜬다
+//  · Shift+Enter 줄   사용자가 "줄간격만" 시킨 줄바꿈(줄 끝 공백 두 칸 = 마크다운 하드 브레이크)
+//  · 연속되는 대사    보기 옵션 — 실제 0 적용은 CSS 변수(--paper-tight-gap)가 결정한다
+// 판정은 순수 함수(shared/paraGap.ts)가 하고 여기서는 줄에 표를 붙이기만 한다.
+const gapLineDeco: Record<Exclude<GapKind, null>, Decoration> = {
+  blank: Decoration.line({ class: 'cm-blank-line' }),
+  soft: Decoration.line({ class: 'cm-soft-break' }),
+  dialogue: Decoration.line({ class: 'cm-tight-dialogue' })
+}
 
-function blankLineDecos(view: EditorView, addLine: (lineFrom: number) => void): void {
+/**
+ * 빈 줄을 건너뛰고 다음 '내용 있는' 줄을 찾는다 — 빈 줄로 문단을 갈라 쓴 원고에서도
+ * 대사가 이어지는 걸 알아보게. 멀리까지 뒤지지는 않는다(그만큼 벌어져 있으면 이미 장면이 갈렸다).
+ */
+const BLANK_LOOKAHEAD = 8
+
+function nextContentText(doc: Text, lineNumber: number): string | null {
+  const last = Math.min(doc.lines, lineNumber + 1 + BLANK_LOOKAHEAD)
+  for (let n = lineNumber + 1; n <= last; n += 1) {
+    const t = doc.line(n).text
+    if (t.trim() !== '') return t
+  }
+  return null
+}
+
+function gapDecos(view: EditorView, addLine: (lineFrom: number, kind: GapKind) => void): void {
   const doc = view.state.doc
   for (const { from, to } of view.visibleRanges) {
     let pos = from
     for (;;) {
       const line = doc.lineAt(pos)
-      if (line.length === 0) addLine(line.from)
+      const kind = gapKindAt(line.text, nextContentText(doc, line.number))
+      if (kind) addLine(line.from, kind)
       if (line.to >= to || line.to >= doc.length) break
       pos = line.to + 1
+    }
+  }
+}
+
+// ── 밑줄(<u>…</u>) 렌더 ──
+// 마크다운엔 밑줄 문법이 없어 Ctrl+U는 표준 HTML <u>를 넣는다(§6.1d). 커서가 없는 줄에서는
+// 태그를 감추고 밑줄만 보이게 — 제목의 #·굵게의 ** 를 감추는 것과 같은 라이브 프리뷰 규칙.
+// 한 줄 안에서 닫히는 것만 다룬다(문단을 넘는 밑줄은 소스 그대로 보여 주는 편이 안전하다).
+const UNDERLINE_RE = /<u>([^\n]*?)<\/u>/gi
+const underlineMark = Decoration.mark({ class: 'cm-u' })
+const U_OPEN = '<u>'.length
+
+function underlineDecos(
+  view: EditorView,
+  addMark: (from: number, to: number, d: Decoration) => void,
+  addHidden: (from: number, to: number, d: Decoration) => void
+): void {
+  for (const { from, to } of view.visibleRanges) {
+    const text = view.state.sliceDoc(from, to)
+    UNDERLINE_RE.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = UNDERLINE_RE.exec(text))) {
+      const start = from + m.index
+      const innerFrom = start + U_OPEN
+      const innerTo = innerFrom + m[1].length
+      if (m[1].length > 0) addMark(innerFrom, innerTo, underlineMark)
+      if (selectionTouchesLine(view, start)) continue // 그 줄에 커서 → 태그 노출(편집 가능)
+      addHidden(start, innerFrom, hidden)
+      addHidden(innerTo, start + m[0].length, hidden)
     }
   }
 }
@@ -264,31 +317,53 @@ const alignField = StateField.define<DecorationSet>({
   ]
 })
 
-function buildDecorations(view: EditorView): DecorationSet {
-  // 라인 데코(인용 블록)와 인라인 replace 데코(기호 숨김·이미지·구분선)가 섞이므로
+/**
+ * 라이브 프리뷰 데코를 만든다.
+ *
+ * 두 벌을 만드는 이유: `atomicRanges`에 넘긴 범위는 커서가 **통째로 건너뛴다**. 감춘 기호·이미지처럼
+ * 안으로 들어갈 일이 없는 replace 데코는 그래야 맞지만, 밑줄(mark 데코)처럼 **글자 위에 얹기만 하는**
+ * 데코까지 아톰이 되면 그 글을 편집할 수 없다(실측 함정). 그래서 아톰 목록을 따로 모은다.
+ */
+function buildDecorations(view: EditorView): { decorations: DecorationSet; atomic: DecorationSet } {
+  // 라인 데코(인용 블록·간격)와 인라인 데코(기호 숨김·이미지·구분선·밑줄)가 섞이므로
   // 수동 정렬 대신 Decoration.set(ranges, true)에 정렬을 맡긴다(라인/인라인 side 처리까지 정확).
   const ranges: ReturnType<Decoration['range']>[] = []
+  const atomic: ReturnType<Decoration['range']>[] = []
+  /** 감춤·치환 데코 — 커서가 통과하지 않아야 하니 아톰 목록에도 넣는다. */
   const push = (from: number, to: number, d: Decoration): void => {
+    ranges.push(d.range(from, to))
+    atomic.push(d.range(from, to))
+  }
+  /** 글자 위에 얹기만 하는 데코 — 아톰이 되면 편집이 막힌다. */
+  const paint = (from: number, to: number, d: Decoration): void => {
     ranges.push(d.range(from, to))
   }
   markHideDecos(view, push)
   hrDecos(view, push)
   imageDecos(view, push)
+  underlineDecos(view, paint, push)
   blockquoteDecos(view, (lineFrom) => ranges.push(quoteLine.range(lineFrom)))
-  blankLineDecos(view, (lineFrom) => ranges.push(blankLine.range(lineFrom)))
+  gapDecos(view, (lineFrom, kind) => {
+    if (kind) ranges.push(gapLineDeco[kind].range(lineFrom))
+  })
   // 정렬 블록은 여기 넣지 않는다 — block 데코라 StateField(alignField)로 따로 제공한다.
-  return Decoration.set(ranges, true)
+  return { decorations: Decoration.set(ranges, true), atomic: Decoration.set(atomic, true) }
 }
 
 const livePreview = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet
+    atomic: DecorationSet
     constructor(view: EditorView) {
-      this.decorations = buildDecorations(view)
+      const built = buildDecorations(view)
+      this.decorations = built.decorations
+      this.atomic = built.atomic
     }
     update(u: ViewUpdate): void {
       if (u.docChanged || u.viewportChanged || u.selectionSet) {
-        this.decorations = buildDecorations(u.view)
+        const built = buildDecorations(u.view)
+        this.decorations = built.decorations
+        this.atomic = built.atomic
       }
     }
   },
@@ -296,7 +371,7 @@ const livePreview = ViewPlugin.fromClass(
     decorations: (v) => v.decorations,
     // 숨김/이미지 replace 데코가 아톰이 되도록(커서가 통과하지 않게)
     provide: (plugin) =>
-      EditorView.atomicRanges.of((view) => view.plugin(plugin)?.decorations ?? Decoration.none)
+      EditorView.atomicRanges.of((view) => view.plugin(plugin)?.atomic ?? Decoration.none)
   }
 )
 
@@ -313,7 +388,9 @@ const quoteTheme = EditorView.theme({
   '.cm-line.cm-align-left': { textAlign: 'left' },
   '.cm-line.cm-align-center': { textAlign: 'center' },
   '.cm-line.cm-align-right': { textAlign: 'right' },
-  '.cm-line.cm-align-justify': { textAlign: 'justify' }
+  '.cm-line.cm-align-justify': { textAlign: 'justify' },
+  // 밑줄(<u>) — 글자색을 그대로 쓰되 밑줄만. 링크(파란 밑줄)와 헷갈리지 않게 색을 바꾸지 않는다.
+  '.cm-u': { textDecoration: 'underline', textUnderlineOffset: '2px' }
 })
 
 /** Editor에 추가할 마크다운 라이브 프리뷰 확장(스타일 + 기호 숨김 + 이미지 + 인용 블록 + 문단 정렬). */

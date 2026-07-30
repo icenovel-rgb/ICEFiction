@@ -10,6 +10,7 @@ import { AssetsPanel } from './components/AssetsPanel'
 import { Binder } from './components/Binder'
 import { DialogHost } from './components/DialogHost'
 import { Editor } from './components/Editor'
+import { HelpPanel } from './components/HelpPanel'
 import { ImageStudio } from './components/ImageStudio'
 import { Inspector } from './components/Inspector'
 import { Library } from './components/Library'
@@ -22,6 +23,7 @@ import { ViewSettings } from './components/ViewSettings'
 import { useAi } from './state/ai'
 import { useStore } from './state/store'
 import { applySettings, useSettings } from './state/settings'
+import { useHelp } from './ui/help'
 
 export function App(): React.ReactElement {
   const project = useStore((s) => s.project)
@@ -92,6 +94,7 @@ export function App(): React.ReactElement {
     <>
       {project ? <Workspace /> : <Library />}
       <UpdateBar />
+      <HelpPanel />
       <DialogHost />
       <AssetPicker />
       <ImageStudio />
@@ -130,6 +133,11 @@ function Workspace(): React.ReactElement {
         patch({ rightOpen: true })
         setTab('search')
         setSearchFocusToken((t) => t + 1)
+      }
+      // F1 = 문법·단축키 도움말(어느 프로그램에서나 도움말 자리).
+      if (e.key === 'F1') {
+        e.preventDefault()
+        useHelp.getState().toggle()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -219,6 +227,13 @@ function Workspace(): React.ReactElement {
           </button>
           <button className="ws-focus" onClick={toggleFocus} title="집중 모드 — 양쪽 패널 접기 (Ctrl+\\)">
             {binderOpen || rightOpen ? '⛶ 집중' : '⛶ 해제'}
+          </button>
+          <button
+            className="ws-help"
+            onClick={() => useHelp.getState().toggle()}
+            title="문법·단축키 도움말 (F1)"
+          >
+            ?
           </button>
         </div>
       </header>

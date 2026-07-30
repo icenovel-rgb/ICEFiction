@@ -8,6 +8,8 @@
  */
 import type { Command, EditorView } from '@codemirror/view'
 import { setAlign, type BlockAlign } from '../../../shared/align'
+import { BOLD, ITALIC, toggleMark, UNDERLINE, type MarkStyle } from '../../../shared/inlineMark'
+import { SOFT_BREAK } from '../../../shared/paraGap'
 
 /** 전각 공백 — 한글 원고 들여쓰기 한 칸. */
 export const INDENT = '　'
@@ -107,6 +109,55 @@ export function alignSelection(view: EditorView, align: BlockAlign | null): bool
 export function alignCommand(align: BlockAlign | null): Command {
   return (view) => alignSelection(view, align)
 }
+
+/**
+ * Shift+Enter — **문단 간격이 붙지 않는** 줄바꿈(§8.1). 줄간격만 적용된 다음 줄로 내려간다.
+ *
+ * 파일에는 마크다운 표준 하드 브레이크(줄 끝 공백 두 칸)로 남긴다 — 원고에 보이는 기호를 남기지
+ * 않으면서 깃허브·옵시디언·pandoc이 모두 `<br>`로 읽는다. 화면에서는 markdownView가 그 줄을
+ * `.cm-soft-break`으로 표시해 아래 여백을 0으로 되돌린다.
+ *
+ * 커서 앞에 이미 공백이 있으면 그만큼 먹고 넣는다 — Shift+Enter를 여러 번 눌러도 공백이 쌓이지 않게.
+ */
+export const softBreak: Command = (view) => {
+  const { state } = view
+  const sel = state.selection.main
+  const line = state.doc.lineAt(sel.from)
+  const head = state.doc.sliceString(line.from, sel.from)
+  const trailing = /[ \t]*$/.exec(head)?.[0].length ?? 0
+  const from = sel.from - trailing
+  const insert = SOFT_BREAK + state.lineBreak
+  view.dispatch({
+    changes: { from, to: sel.to, insert },
+    selection: { anchor: from + insert.length },
+    userEvent: 'input',
+    scrollIntoView: true
+  })
+  return true
+}
+
+/**
+ * 굵게·기울임·밑줄 토글(§6.1d) — Ctrl+B / Ctrl+I / Ctrl+U.
+ * 판단은 순수 함수(shared/inlineMark.ts)가 하고 여기서는 한 트랜잭션으로 반영만 한다(Ctrl+Z 한 번에 원복).
+ */
+function markCommand(style: MarkStyle): Command {
+  return (view) => {
+    const { state } = view
+    const sel = state.selection.main
+    const edit = toggleMark(state.doc.toString(), sel.from, sel.to, style)
+    view.dispatch({
+      changes: { from: edit.from, to: edit.to, insert: edit.insert },
+      selection: { anchor: edit.anchor, head: edit.head },
+      userEvent: 'input.format',
+      scrollIntoView: true
+    })
+    return true
+  }
+}
+
+export const toggleBold = markCommand(BOLD)
+export const toggleItalic = markCommand(ITALIC)
+export const toggleUnderline = markCommand(UNDERLINE)
 
 /** '>' 만 있고 내용이 없는 인용 줄인가(예: ">", "> ", ">>"). */
 const EMPTY_QUOTE_RE = /^\s*>[\s>]*$/

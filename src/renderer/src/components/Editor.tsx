@@ -28,8 +28,13 @@ import {
   alignCommand,
   exitQuoteOnEmptyLine,
   indentWithFullWidthSpace,
-  outdentFullWidthSpace
+  outdentFullWidthSpace,
+  softBreak,
+  toggleBold,
+  toggleItalic,
+  toggleUnderline
 } from '../lib/editorCommands'
+import { deleteQuotePair, smartTyping } from '../lib/typing'
 import { toStandardEmbed } from '../../../shared/mdEmbed'
 
 /**
@@ -37,10 +42,19 @@ import { toStandardEmbed } from '../../../shared/mdEmbed'
  * (Enter → insertNewlineContinueMarkup), 기본 우선순위로는 우리 Enter가 절대 실행되지 않는다(실측).
  *
  * Tab = 전각 공백 들여쓰기(한글 원고 관례) · Enter = 빈 인용 줄이면 인용문 탈출 ·
+ * Shift+Enter = 문단 간격 없는 줄바꿈 · Ctrl+{B,I,U} = 굵게·기울임·밑줄 ·
  * Ctrl+Shift+{L,E,R,J} = 선택 문단 정렬, Ctrl+Shift+0 = 해제.
  */
 const writingKeymap = [
   { key: 'Enter', run: exitQuoteOnEmptyLine }, // false면 마크다운 기본(인용·목록 이어쓰기)으로 넘어간다
+  // Shift+Enter = 줄간격만 적용되는 줄바꿈(§8.1). defaultKeymap의 Enter가 shift까지 함께 받으므로
+  // 여기(Prec.highest)에서 먼저 잡아야 한다.
+  { key: 'Shift-Enter', run: softBreak },
+  // 빈 짝("|") 사이의 Backspace는 두 부호를 함께 지운다. 짝이 아니면 false → 기본 동작.
+  { key: 'Backspace', run: deleteQuotePair },
+  { key: 'Mod-b', run: toggleBold },
+  { key: 'Mod-i', run: toggleItalic },
+  { key: 'Mod-u', run: toggleUnderline },
   // AI 제안이 떠 있으면 Tab=채택 / Esc=버리기. 제안이 없으면 false를 돌려 기존 동작으로 넘긴다.
   { key: 'Tab', run: (v: EditorView) => acceptGhost(v) },
   // 슬래시 메뉴가 떠 있을 때도 Tab으로 고른다(Enter만 되면 "Tab=확정" 감각이 끊긴다).
@@ -136,6 +150,13 @@ const paperTheme = EditorView.theme({
     textIndent: 'var(--paper-indent, 0)'
   },
   '.cm-line.cm-blank-line': { paddingBottom: '0' },
+  // Shift+Enter로 만든 줄 — 사용자가 직접 "줄간격만"이라고 시킨 줄이므로 무조건 0.
+  '.cm-line.cm-soft-break': { paddingBottom: '0' },
+  /**
+   * 연속되는 대사(보기 옵션) — 켜면 0, 끄면 평소 문단 간격. 값을 CSS 변수로 받는 이유는
+   * 옵션을 끄고 켤 때 **데코를 다시 만들지 않아도** 즉시 반영되기 때문이다(표는 항상 붙여 둔다).
+   */
+  '.cm-line.cm-tight-dialogue': { paddingBottom: 'var(--paper-tight-gap, 0)' },
   '&.cm-focused': { outline: 'none' },
   // 줄번호 거터 — 종이에 녹아들게(투명 배경, 흐린 글자). display는 변수로 토글(줄번호 숨기기).
   '.cm-gutters': {
@@ -325,8 +346,16 @@ export function Editor(): React.ReactElement {
           search({ top: true }), // 패널을 에디터 상단에 — 하단은 상태바와 겹쳐 어색
           highlightSelectionMatches(), // 드래그한 단어와 같은 단어를 은은히 표시
           koPhrases,
-          markdown(),
+          /**
+           * Setext 제목(밑줄식 제목)을 **끈다** — 실측 버그의 뿌리다.
+           * 마크다운은 문단 바로 아래 줄이 `---`/`===`/`--` 이면 그 **위 문단을 제목으로** 만든다.
+           * 그래서 줄표를 두 번 치면 위 문단이 갑자기 커졌고(사용자 지적), 커서가 그 줄을 떠나면
+           * 기호까지 감춰져 원인이 보이지 않았다. 이 앱은 제목을 `#`으로 쓰므로 잃을 게 없다.
+           * 겸사겸사 `---`은 이제 문단 바로 아래에서도 제목이 아니라 가로 구분선으로 파싱된다.
+           */
+          markdown({ extensions: [{ remove: ['SetextHeading'] }] }),
           ...markdownExtras,
+          smartTyping, // 따옴표 자동 짝 + 줄 앞 `--` → 불릿(§6.1c)
           ghostField, // AI 제안(흐린 글씨) — 문서를 건드리지 않는 위젯(§6.1a)
           slashMenu(), // 본문 `/` 명령(§6.1b)
           placeholder(PLACEHOLDER), // 빈 문서에서 `/`의 존재를 알린다

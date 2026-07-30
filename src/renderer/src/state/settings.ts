@@ -67,6 +67,15 @@ interface SettingsState {
   firstLineMode: FirstLineMode
   /** 들여쓰기·내어쓰기 폭(em). */
   firstLineEm: number
+  /**
+   * 대사가 연속될 때 그 사이 문단 간격을 없앤다(§8.1).
+   * 서술→대사 첫 줄, 대사 마지막 줄→서술 경계는 그대로 벌어진다 — 대사 덩어리만 붙는다.
+   */
+  tightDialogue: boolean
+  /** 따옴표를 치면 닫는 짝까지 넣고 커서를 안으로(§6.1c). */
+  autoPairQuotes: boolean
+  /** 줄 앞에서 `-`를 두 번 치면 불릿(`• `)으로 바꾼다. 세 번이면 구분선(`---`)(§6.1c). */
+  dashBullet: boolean
   /** 사용자가 직접 고른 색(있으면 프리셋 색을 덮음). 프리셋 바꾸면 초기화. */
   customBg: string | null
   customText: string | null
@@ -91,6 +100,9 @@ export const useSettings = create<SettingsState>()(
       paraGapEm: 0.7, // 엔터를 두 번 치지 않아도 문단이 갈라져 보이는 최소한
       firstLineMode: 'none',
       firstLineEm: 1,
+      tightDialogue: false, // 기존 원고의 모양을 말없이 바꾸지 않는다 — 켜고 싶은 사람만 켠다
+      autoPairQuotes: true, // 대사를 가장 많이 두드리므로 기본으로 켠다
+      dashBullet: true,
       customBg: null,
       customText: null,
 
@@ -150,6 +162,9 @@ export function applySettings(s: SettingsState): void {
   root.setProperty('--paper-align', s.textAlign ?? 'justify')
   // 문단 모양(§8.1) — 간격은 줄 아래 여백으로, 첫 줄 모양은 text-indent(+내어쓰기면 왼쪽 여백)로.
   root.setProperty('--paper-para-gap', `${s.paraGapEm ?? 0}em`)
+  // 연속 대사 줄의 아래 여백 — 옵션이 켜져 있으면 0, 아니면 평소 문단 간격.
+  // 데코(`.cm-tight-dialogue`)는 항상 붙어 있고 실제 값만 여기서 갈아끼운다(즉시 반영).
+  root.setProperty('--paper-tight-gap', s.tightDialogue ? '0px' : `${s.paraGapEm ?? 0}em`)
   const first = firstLineOffsets(s)
   root.setProperty('--paper-indent', first.indent)
   root.setProperty('--paper-hang-pad', first.pad)

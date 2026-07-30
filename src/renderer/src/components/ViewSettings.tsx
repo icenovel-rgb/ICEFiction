@@ -14,6 +14,7 @@ import {
 } from '../state/settings'
 import { getEditorView } from '../lib/editorBridge'
 import { alignSelection } from '../lib/editorCommands'
+import { useHelp } from '../ui/help'
 import { NumberField } from './NumberField'
 import type { BlockAlign } from '../../../shared/align'
 
@@ -39,41 +40,22 @@ const FIRSTLINE_OPTIONS: { value: FirstLineMode; label: string; glyph: string; h
   { value: 'hang', label: '내어쓰기', glyph: '↤', hint: '첫 줄만 밖으로, 나머지 줄이 안으로' }
 ]
 
-/** 마크다운 문법 치트시트 — 원고는 표준 .md로 저장되므로 어디서든 통하는 문법(§6.1). */
-const MD_ROWS: { code: string; desc: string }[] = [
-  { code: '# 제목', desc: '큰 제목 (##·### 로 소제목)' },
-  { code: '**굵게**', desc: '굵은 글씨' },
-  { code: '*기울임*', desc: '기울인 글씨' },
-  { code: '~~취소선~~', desc: '취소선' },
-  { code: '> 인용문', desc: '인용 블록' },
-  { code: '- 항목', desc: '글머리 목록 (1. 은 번호 목록)' },
-  { code: '![](경로)', desc: '이미지 넣기 (자료를 끌어놓으면 자동 삽입)' },
-  { code: '[글자](주소)', desc: '링크' },
-  { code: '`코드`', desc: '고정폭 글자' },
-  { code: '---', desc: '가로 구분선' },
-  { code: 'Tab', desc: '들여쓰기 — 전각 공백 한 칸(Shift+Tab으로 제거)' }
-]
-
-function MarkdownHelp(): React.ReactElement {
+/**
+ * 문법 도움말은 **상단바 ? 아이콘(F1)**의 도움말 창으로 옮겼다(§8.1).
+ * 여기 접혀 있던 치트시트는 보기 설정을 열어야만 보였고, 마크다운 표준 문법과 이 앱만의 규칙
+ * (전각 공백 들여쓰기·Shift+Enter·불릿 `--`·`<u>` 밑줄)을 함께 설명할 자리가 없었다.
+ */
+function HelpLink(): React.ReactElement {
   return (
-    <details className="vs-mdhelp">
-      <summary>마크다운 문법 도움말</summary>
-      <table>
-        <tbody>
-          {MD_ROWS.map((r) => (
-            <tr key={r.code}>
-              <td>
-                <code>{r.code}</code>
-              </td>
-              <td>{r.desc}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="vs-mdhelp">
+      <button className="vs-help-open" onClick={() => useHelp.getState().show()}>
+        📖 문법·단축키 도움말 열기
+      </button>
       <p className="vs-mdhelp-note">
-        커서가 없는 줄은 기호가 숨겨져 결과처럼 보입니다(라이브 프리뷰). AI에게 문법을 물어봐도 됩니다.
+        상단바의 <b>?</b> 아이콘이나 <kbd>F1</kbd>으로도 열립니다. 커서가 없는 줄은 기호가 숨겨져
+        결과처럼 보입니다(라이브 프리뷰).
       </p>
-    </details>
+    </div>
   )
 }
 
@@ -184,6 +166,38 @@ export function ViewSettings(): React.ReactElement {
         onChange={(v) => s.patch({ paraGapEm: v })}
       />
 
+      {/* 연속 대사 붙이기 — 문단 간격의 예외 규칙이라 바로 아래에 둔다. */}
+      <div className="vs-field">
+        <label className="vs-row vs-switch">
+          <span>대사가 이어질 땐 붙이기</span>
+          <input
+            type="checkbox"
+            checked={s.tightDialogue}
+            onChange={(e) => s.patch({ tightDialogue: e.target.checked })}
+          />
+        </label>
+        <span className="insp-hint">
+          따옴표로 시작하는 줄이 연달아 나오면 그 사이 문단 간격을 없앱니다. 서술에서 넘어오는 첫
+          대사와, 서술로 돌아가는 마지막 대사 뒤는 그대로 벌어집니다.
+        </span>
+        {/* 설정과 결과가 같은 화면에 — 켜고 끄면 이 예시가 바로 붙고 떨어진다. */}
+        <div
+          className="vs-preview vs-preview-dialogue"
+          style={{ background: colors.bg, color: colors.text, textAlign: s.textAlign }}
+        >
+          <p className="vs-preview-p" style={{ marginBottom: `${s.paraGapEm}em` }}>
+            그는 문을 열었다.
+          </p>
+          <p className="vs-preview-p" style={{ marginBottom: s.tightDialogue ? 0 : `${s.paraGapEm}em` }}>
+            &quot;어서 와.&quot;
+          </p>
+          <p className="vs-preview-p" style={{ marginBottom: `${s.paraGapEm}em` }}>
+            &quot;오래 기다렸어?&quot;
+          </p>
+          <p className="vs-preview-p">우산에서 물이 떨어졌다.</p>
+        </div>
+      </div>
+
       <div className="vs-field">
         <span>문단 첫 줄</span>
         <div className="vs-align vs-align-doc">
@@ -236,6 +250,33 @@ export function ViewSettings(): React.ReactElement {
         <span className="insp-hint">
           원고에 <code>&lt;div align="…"&gt;</code>로 기록됩니다 — 깃허브·옵시디언 등 다른 앱에서도
           그대로 정렬돼 보입니다.
+        </span>
+      </div>
+
+      {/* 쓰기 도우미 — 원고를 고치는 동작이라 보기(화면) 설정과 구분해 묶어 둔다. */}
+      <div className="vs-field">
+        <span>쓰기 도우미</span>
+        <label className="vs-row vs-switch">
+          <span>따옴표 자동 짝</span>
+          <input
+            type="checkbox"
+            checked={s.autoPairQuotes}
+            onChange={(e) => s.patch({ autoPairQuotes: e.target.checked })}
+          />
+        </label>
+        <label className="vs-row vs-switch">
+          <span>
+            줄 앞 <code>--</code> → 불릿 <code>•</code>
+          </span>
+          <input
+            type="checkbox"
+            checked={s.dashBullet}
+            onChange={(e) => s.patch({ dashBullet: e.target.checked })}
+          />
+        </label>
+        <span className="insp-hint">
+          따옴표를 치면 닫는 짝까지 들어가고 커서가 안으로 갑니다(닫을 때 한 번 더 치면 건너뜁니다).
+          줄 앞에서 <code>-</code>를 두 번이면 불릿, 세 번이면 가로 구분선(<code>---</code>)입니다.
         </span>
       </div>
 
@@ -293,7 +334,7 @@ export function ViewSettings(): React.ReactElement {
         )}
       </div>
 
-      <MarkdownHelp />
+      <HelpLink />
     </div>
   )
 }
