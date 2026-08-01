@@ -1,6 +1,6 @@
 {
   "name": "icefiction",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "소설 집필 데스크톱 프로그램 — 로컬 폴더 기반 원고·설정 관리 + AI 어시스턴트",
   "main": "./out/main/index.js",
   "type": "module",
@@ -10,7 +10,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "tsx tests/version.test.mts && tsx tests/numstep.test.mts && tsx tests/mdembed.test.mts && tsx tests/align.test.mts && tsx tests/imageprompt.test.mts && tsx tests/aspect.test.mts && tsx tests/project.test.mts && tsx tests/search.test.mts && tsx tests/style.test.mts && tsx tests/openrequest.test.mts && tsx tests/index.test.mts && tsx tests/slash.test.mts && tsx tests/typing.test.mts && tsx tests/paragap.test.mts && tsx tests/inlinemark.test.mts && tsx tests/aitext.test.mts && tsx tests/replacetext.test.mts && tsx tests/quotestyle.test.mts && tsx tests/ai.test.mts",
+    "test": "tsx tests/version.test.mts && tsx tests/numstep.test.mts && tsx tests/mdembed.test.mts && tsx tests/align.test.mts && tsx tests/imageprompt.test.mts && tsx tests/aspect.test.mts && tsx tests/project.test.mts && tsx tests/search.test.mts && tsx tests/style.test.mts && tsx tests/openrequest.test.mts && tsx tests/index.test.mts && tsx tests/slash.test.mts && tsx tests/typing.test.mts && tsx tests/paragap.test.mts && tsx tests/inlinemark.test.mts && tsx tests/aitext.test.mts && tsx tests/replacetext.test.mts && tsx tests/quotestyle.test.mts && tsx tests/update.test.mts && tsx tests/ai.test.mts",
     "test:style": "tsx tests/style.test.mts",
     "test:index": "tsx tests/index.test.mts",
     "test:md": "tsx tests/mdembed.test.mts",
@@ -32,7 +32,8 @@
     "test:mark": "tsx tests/inlinemark.test.mts",
     "test:aitext": "tsx tests/aitext.test.mts",
     "test:replace": "tsx tests/replacetext.test.mts",
-    "test:quotestyle": "tsx tests/quotestyle.test.mts"
+    "test:quotestyle": "tsx tests/quotestyle.test.mts",
+    "test:update": "tsx tests/update.test.mts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
