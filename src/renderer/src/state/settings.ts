@@ -7,6 +7,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { SECTION_VIEW, type GalleryView } from '../lib/sections'
+import { BOTTOM_PAD_DEFAULT, bottomPadCss } from '../../../shared/bottomPad'
 import type { QuoteStyle } from '../../../shared/quoteStyle'
 
 export type ThemeKey = 'sepia' | 'dark' | 'white'
@@ -75,6 +76,11 @@ interface SettingsState {
   /** 들여쓰기·내어쓰기 폭(em). */
   firstLineEm: number
   /**
+   * 원고 아래 여백 — **화면 높이의 %**(§8.2). 마지막 줄을 쓰는 동안 커서가 창 바닥에 붙지 않게 한다.
+   * 0이면 예전처럼 바닥에 붙는다. 계산·범위는 `shared/bottomPad.ts` 한 군데에 모여 있다.
+   */
+  bottomPadVh: number
+  /**
    * 대사가 연속될 때 그 사이 문단 간격을 없앤다(§8.1).
    * 서술→대사 첫 줄, 대사 마지막 줄→서술 경계는 그대로 벌어진다 — 대사 덩어리만 붙는다.
    */
@@ -116,6 +122,7 @@ export const useSettings = create<SettingsState>()(
       paraGapEm: 0.7, // 엔터를 두 번 치지 않아도 문단이 갈라져 보이는 최소한
       firstLineMode: 'none',
       firstLineEm: 1,
+      bottomPadVh: BOTTOM_PAD_DEFAULT, // 커서가 화면 아래 3분의 1 위쪽에서 멈춘다
       tightDialogue: false, // 기존 원고의 모양을 말없이 바꾸지 않는다 — 켜고 싶은 사람만 켠다
       autoPairQuotes: true, // 대사를 가장 많이 두드리므로 기본으로 켠다
       quoteStyle: 'keep', // 기존 원고의 모양을 말없이 바꾸지 않는다 — 원하는 사람만 고른다
@@ -196,6 +203,12 @@ export function applySettings(s: SettingsState): void {
   const first = firstLineOffsets(s)
   root.setProperty('--paper-indent', first.indent)
   root.setProperty('--paper-hang-pad', first.pad)
+  /**
+   * 원고 아래 여백(§8.2) — 문서 끝에서도 더 스크롤할 자리를 만든다.
+   * `vh`라서 창 크기가 바뀌면 CSS가 알아서 따라간다(리사이즈 리스너가 필요 없다).
+   * 타이핑 중 커서를 띄우는 몫은 CM6 `scrollMargins`가 맡는다(Editor.tsx) — 둘 다 있어야 한다.
+   */
+  root.setProperty('--paper-pad-bottom', bottomPadCss(s.bottomPadVh ?? 0))
   root.setProperty('--gutter-display', s.showLineNumbers ? 'flex' : 'none')
 }
 

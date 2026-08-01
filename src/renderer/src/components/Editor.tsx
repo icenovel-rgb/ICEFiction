@@ -19,7 +19,9 @@ import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/sea
 import { markdown } from '@codemirror/lang-markdown'
 import { useAi } from '../state/ai'
 import { useSession } from '../state/session'
+import { useSettings } from '../state/settings'
 import { useStore } from '../state/store'
+import { bottomPadPx } from '../../../shared/bottomPad'
 import { setEditorView } from '../lib/editorBridge'
 import { acceptGhost, clearGhost, ghostField, type GhostState } from '../lib/ghostText'
 import { slashMenu } from '../lib/slashMenu'
@@ -123,11 +125,19 @@ function assetRelFromDrop(dt: DataTransfer): string {
 // 테마는 CSS 변수(--paper-*, --gutter-display)를 읽는다 — 설정 변경이 변수 갱신만으로 즉시 반영된다.
 const paperTheme = EditorView.theme({
   '&': { height: '100%', backgroundColor: 'var(--paper-bg)', color: 'var(--paper-text)' },
+  /**
+   * 아래 여백만 설정값으로 뺀다(§8.2) — 문서 끝에서도 더 스크롤할 자리를 만들기 위해서다.
+   * 이것만으로는 **타이핑 중 커서가 여전히 바닥에 붙는다**(CM6는 커서가 보이기만 하면 더
+   * 스크롤하지 않는다) → 아래 `bottomScrollMargin` 이 나머지 절반을 맡는다.
+   */
   '.cm-scroller': {
     fontFamily: 'var(--paper-font)',
     fontSize: 'var(--paper-fontsize)',
     lineHeight: 'var(--paper-lineheight)',
-    padding: '32px 0',
+    paddingTop: '32px',
+    paddingBottom: 'var(--paper-pad-bottom, 32px)',
+    paddingLeft: '0',
+    paddingRight: '0',
     overflow: 'auto'
   },
   '.cm-content': {
@@ -176,6 +186,24 @@ const paperTheme = EditorView.theme({
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
     backgroundColor: 'var(--accent-soft)'
   }
+})
+
+/**
+ * 타이핑 중 커서를 바닥에서 띄운다(§8.2) — 아래 여백의 나머지 절반.
+ *
+ * `.cm-scroller`의 padding-bottom은 "문서 끝에서 더 스크롤할 자리"를 만들 뿐이다. CM6는 커서가
+ * **보이기만 하면** 더 스크롤하지 않으므로, 그것만으로는 마지막 줄을 칠 때 커서가 여전히 창
+ * 바닥에 붙는다. `scrollMargins`가 "이만큼은 비워 두고 커서를 보이게 하라"고 알려 준다.
+ *
+ * 값을 여기서 매번 읽는 이유: 이 facet은 **스크롤할 때마다 호출되는 함수**라, 설정이 바뀌어도
+ * 뷰를 다시 만들거나 reconfigure 할 필요가 없다(Compartment 불필요).
+ *
+ * 기준 높이는 창(window)이 아니라 **원고 영역**(`scrollDOM.clientHeight`)이다 — 사용자가 보는
+ * "화면"이 그 영역이고, CSS 쪽(`vh`, 창 기준)보다 항상 작아서 여백이 마진보다 모자랄 일이 없다.
+ */
+const bottomScrollMargin = EditorView.scrollMargins.of((view) => {
+  const px = bottomPadPx(useSettings.getState().bottomPadVh ?? 0, view.scrollDOM.clientHeight)
+  return px > 0 ? { bottom: px } : null
 })
 
 /** 빈 문서에 흐리게 뜨는 안내 — `/`가 있다는 걸 아무 데도 안 적으면 아무도 못 찾는다. */
@@ -417,6 +445,7 @@ export function Editor(): React.ReactElement {
           EditorView.lineWrapping,
           lineNumbers(),
           paperTheme,
+          bottomScrollMargin,
           editableRef.current.of(
             EditorView.editable.of(useStore.getState().activePath != null)
           ),

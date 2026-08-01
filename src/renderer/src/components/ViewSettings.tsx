@@ -18,6 +18,7 @@ import { alignSelection, unifyQuotes } from '../lib/editorCommands'
 import { QUOTE_STYLE_LABEL, type QuoteStyle } from '../../../shared/quoteStyle'
 import { useHelp } from '../ui/help'
 import { NumberField } from './NumberField'
+import { BOTTOM_PAD_MAX, BOTTOM_PAD_MIN } from '../../../shared/bottomPad'
 import type { BlockAlign } from '../../../shared/align'
 
 /** 문단 정렬 버튼 — 좌/가운데/우/양쪽(§8.1). hint = 선택 문단 정렬 단축키. */
@@ -308,6 +309,23 @@ export function ViewSettings(): React.ReactElement {
         <span className="insp-hint">
           보기 설정입니다 — 원고 파일에는 공백이 들어가지 않습니다. 실제 글자로 넣으려면 Tab(전각
           공백 한 칸)을 쓰세요.
+        </span>
+      </div>
+
+      {/* 원고 아래 여백(§8.2) — 커서가 창 바닥에 붙어 다음 줄이 안 보이는 문제. */}
+      <div className="vs-field">
+        <NumberField
+          label={`원고 아래 여백${s.bottomPadVh === 0 ? ' (없음)' : ''}`}
+          unit="%"
+          value={s.bottomPadVh}
+          min={BOTTOM_PAD_MIN}
+          max={BOTTOM_PAD_MAX}
+          step={5}
+          onChange={(v) => s.patch({ bottomPadVh: v })}
+        />
+        <span className="insp-hint">
+          마지막 줄을 쓰는 동안 <b>커서가 창 바닥에 붙지 않습니다.</b> 화면 높이 기준이라 창을
+          키우거나 줄여도 체감이 같습니다. 0으로 두면 예전처럼 바닥까지 씁니다.
         </span>
       </div>
 
