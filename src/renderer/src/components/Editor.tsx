@@ -34,18 +34,20 @@ import {
   toggleItalic,
   toggleUnderline
 } from '../lib/editorCommands'
-import { deleteQuotePair, smartTyping } from '../lib/typing'
+import { deleteQuotePair, exitQuotePair, smartTyping } from '../lib/typing'
 import { toStandardEmbed } from '../../../shared/mdEmbed'
 
 /**
  * 집필 키맵 — **Prec.highest로 올려야 한다.** lang-markdown이 자기 키맵을 Prec.high로 넣기 때문에
  * (Enter → insertNewlineContinueMarkup), 기본 우선순위로는 우리 Enter가 절대 실행되지 않는다(실측).
  *
- * Tab = 전각 공백 들여쓰기(한글 원고 관례) · Enter = 빈 인용 줄이면 인용문 탈출 ·
+ * Tab = 전각 공백 들여쓰기(한글 원고 관례) · Enter = 따옴표 탈출 → 빈 인용 줄이면 인용문 탈출 ·
  * Shift+Enter = 문단 간격 없는 줄바꿈 · Ctrl+{B,I,U} = 굵게·기울임·밑줄 ·
  * Ctrl+Shift+{L,E,R,J} = 선택 문단 정렬, Ctrl+Shift+0 = 해제.
  */
 const writingKeymap = [
+  // 커서 뒤가 닫는 따옴표뿐이면 그 밖으로 나가 다음 줄로(§6.1c). 아니면 아래 Enter로 넘어간다.
+  { key: 'Enter', run: exitQuotePair },
   { key: 'Enter', run: exitQuoteOnEmptyLine }, // false면 마크다운 기본(인용·목록 이어쓰기)으로 넘어간다
   // Shift+Enter = 줄간격만 적용되는 줄바꿈(§8.1). defaultKeymap의 Enter가 shift까지 함께 받으므로
   // 여기(Prec.highest)에서 먼저 잡아야 한다.
@@ -149,6 +151,11 @@ const paperTheme = EditorView.theme({
     paddingLeft: 'var(--paper-hang-pad, 0)',
     textIndent: 'var(--paper-indent, 0)'
   },
+  /**
+   * 제목 줄 위 여백(사용자 요청) — **문단 간격의 3배.** 제목이 앞 내용에 붙어 있으면 새 마디가
+   * 시작된다는 게 안 보인다. 문단 간격을 바꾸면 이 값도 함께 따라간다(따로 설정할 것이 늘지 않는다).
+   */
+  '.cm-line.cm-heading-line': { paddingTop: 'calc(var(--paper-para-gap, 0px) * 3)' },
   '.cm-line.cm-blank-line': { paddingBottom: '0' },
   // Shift+Enter로 만든 줄 — 사용자가 직접 "줄간격만"이라고 시킨 줄이므로 무조건 0.
   '.cm-line.cm-soft-break': { paddingBottom: '0' },
@@ -326,6 +333,8 @@ export function Editor(): React.ReactElement {
 
   const editableRef = useRef(new Compartment())
   const activePath = useStore((s) => s.activePath)
+  // 파일이 밖에서 바뀌었을 때(전체 바꾸기) 본문을 다시 싣기 위한 신호 — 경로는 그대로이기 때문.
+  const docVersion = useStore((s) => s.docVersion)
   const pendingJump = useStore((s) => s.pendingJump)
   // CM 안의 제안 상태를 React로 끌어온다(막대를 그리려면 필요하다).
   const [ghost, setGhost] = useState<GhostState | null>(null)
@@ -453,7 +462,8 @@ export function Editor(): React.ReactElement {
       flushSpot()
       spotRef.current = null
     }
-  }, [activePath])
+    // docVersion — 같은 문서라도 파일이 밖에서 바뀌었으면(전체 바꾸기) 다시 싣는다.
+  }, [activePath, docVersion])
 
   // 앱을 닫을 때도 대기 중인 자리를 흘려 넣는다(디바운스 때문에 마지막 몇 초가 날아가지 않게).
   useEffect(() => {

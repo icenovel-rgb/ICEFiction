@@ -6,6 +6,8 @@
  */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { SECTION_VIEW, type GalleryView } from '../lib/sections'
+import type { QuoteStyle } from '../../../shared/quoteStyle'
 
 export type ThemeKey = 'sepia' | 'dark' | 'white'
 
@@ -55,6 +57,11 @@ interface SettingsState {
   /** 바인더(좌)·인스펙터 등 우측 패널 표시 여부 — 접으면 원고에만 집중(집중 모드). */
   binderOpen: boolean
   rightOpen: boolean
+  /**
+   * 원고를 화면 가운데 고정(§8). 켜면 한쪽 패널만 열어도 원고가 좌우로 밀리지 않는다 —
+   * 열린 패널 반대쪽에 같은 만큼 여백을 비워 둔다(패널이 글자를 가리지 않는다).
+   */
+  centerPaper: boolean
   theme: ThemeKey
   fontKey: string
   fontSizePx: number
@@ -74,14 +81,22 @@ interface SettingsState {
   tightDialogue: boolean
   /** 따옴표를 치면 닫는 짝까지 넣고 커서를 안으로(§6.1c). */
   autoPairQuotes: boolean
+  /**
+   * 따옴표 **모양**(§6.1c) — 곧은 `"` / 둥근 `“ ”`. 자판에는 곧은 것 하나뿐이라, 둥근 따옴표로
+   * 쓰려면 앱이 갈아 끼워 줘야 한다. 기본 keep = 친 그대로(지금까지의 동작을 말없이 바꾸지 않는다).
+   */
+  quoteStyle: QuoteStyle
   /** 줄 앞에서 `-`를 두 번 치면 불릿(`• `)으로 바꾼다. 세 번이면 구분선(`---`)(§6.1c). */
   dashBullet: boolean
   /** 사용자가 직접 고른 색(있으면 프리셋 색을 덮음). 프리셋 바꾸면 초기화. */
   customBg: string | null
   customText: string | null
+  /** 섹션별 갤러리 보기(표지형·리스트형). 비어 있으면 섹션 기본값(SECTION_VIEW)을 따른다(§6.2). */
+  galleryViews: Record<string, GalleryView>
 
   patch: (p: Partial<SettingsState>) => void
   setTheme: (t: ThemeKey) => void
+  setGalleryView: (section: string, view: GalleryView) => void
   resetColors: () => void
 }
 
@@ -92,6 +107,7 @@ export const useSettings = create<SettingsState>()(
       appMode: 'dark', // 기본은 지금까지의 어두운 도구창
       binderOpen: true,
       rightOpen: true,
+      centerPaper: true, // 글 쓰는 자리는 흔들리지 않아야 한다 — 기본으로 켠다
       theme: 'sepia',
       fontKey: 'nanumgothic', // 기본 글꼴 = 내장 나눔고딕(어느 PC에서나 동일하게 보인다)
       fontSizePx: 17,
@@ -102,12 +118,16 @@ export const useSettings = create<SettingsState>()(
       firstLineEm: 1,
       tightDialogue: false, // 기존 원고의 모양을 말없이 바꾸지 않는다 — 켜고 싶은 사람만 켠다
       autoPairQuotes: true, // 대사를 가장 많이 두드리므로 기본으로 켠다
+      quoteStyle: 'keep', // 기존 원고의 모양을 말없이 바꾸지 않는다 — 원하는 사람만 고른다
       dashBullet: true,
       customBg: null,
       customText: null,
+      galleryViews: {},
 
       patch: (p) => set(p),
       setTheme: (t) => set({ theme: t, customBg: null, customText: null }),
+      setGalleryView: (section, view) =>
+        set((s) => ({ galleryViews: { ...s.galleryViews, [section]: view } })),
       resetColors: () => set({ customBg: null, customText: null })
     }),
     {
@@ -126,6 +146,14 @@ export const useSettings = create<SettingsState>()(
     }
   )
 )
+
+/**
+ * 이 섹션을 지금 어떤 보기로 펼칠 것인가 — 사용자가 고른 값이 있으면 그것, 없으면 섹션 기본값.
+ * 하위 폴더 갤러리도 최상위 섹션의 선택을 따른다(같은 성격의 문서라 보기를 따로 기억할 이유가 없다).
+ */
+export function galleryViewOf(s: Pick<SettingsState, 'galleryViews'>, section: string): GalleryView {
+  return s.galleryViews?.[section] ?? SECTION_VIEW[section] ?? 'cover'
+}
 
 /** 색(#rrggbb)이 어두운지 — 명도(0.299R+0.587G+0.114B) 기준. 마크다운 색 대비 판정용. */
 function isDarkColor(hex: string): boolean {

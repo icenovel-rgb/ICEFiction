@@ -14,7 +14,7 @@
  */
 import { EditorView, type Command } from '@codemirror/view'
 import { dashRewrite } from '../../../shared/dash'
-import { emptyQuotePair, quoteAction } from '../../../shared/quotePair'
+import { emptyQuotePair, quoteAction, quoteExitLen } from '../../../shared/quotePair'
 import { useSettings } from '../state/settings'
 
 /** 줄바꿈은 '아무것도 없음'과 같게 본다 — 줄 끝에서도 짝이 생겨야 하므로. */
@@ -58,7 +58,7 @@ export const smartTyping = EditorView.inputHandler.of((view, from, to, text) => 
   // 고른 글을 감싸는 건 순수하게 부호 한 글자만 들어올 때다(조합분이 붙어 오면 '덮어쓰기'다).
   const hasSelection = from !== to && lead.length === 0
 
-  const action = quoteAction(typed, before, after, hasSelection)
+  const action = quoteAction(typed, before, after, hasSelection, s.quoteStyle)
   if (!action) return false
 
   if (action.kind === 'wrap') {
@@ -110,6 +110,39 @@ export const deleteQuotePair: Command = (view) => {
   view.dispatch({
     changes: { from: sel.from - before.length, to: sel.from + after.length },
     userEvent: 'delete.backward'
+  })
+  return true
+}
+
+/**
+ * Enter — 대사를 다 썼으면 **닫는 따옴표 밖으로** 나가 다음 줄로 내려간다(§6.1c).
+ *
+ * 짝은 앱이 넣어 줬는데 벗어나려면 닫는 부호를 한 번 더 쳐야 했다(사용자 지적). 커서 뒤에 닫는
+ * 부호만 남았다면 Enter가 그 부호를 지나쳐 새 줄을 연다 — 손이 한 번 덜 간다.
+ *
+ * 판정은 순수 함수(quoteExitLen)가 하고, 해당 없으면 false를 돌려 평소 Enter(인용 탈출·문단 나누기)에
+ * 넘긴다. 자동 짝을 끈 사람에게는 이 동작도 없다 — 짝을 넣어 준 적이 없으니 벗어날 일도 없다.
+ *
+ * ⚠️ 한글 조합 중의 Enter(글자 확정)는 CM6가 키 핸들러를 아예 건너뛴다(`ignoreDuringComposition`)
+ *    — 마지막 글자가 잘리지 않는다.
+ */
+export const exitQuotePair: Command = (view) => {
+  if (!useSettings.getState().autoPairQuotes) return false
+  const { state } = view
+  const sel = state.selection.main
+  if (!sel.empty) return false
+  const line = state.doc.lineAt(sel.head)
+  const skip = quoteExitLen(
+    state.doc.sliceString(line.from, sel.head),
+    state.doc.sliceString(sel.head, line.to)
+  )
+  if (skip === 0) return false
+  const at = sel.head + skip
+  view.dispatch({
+    changes: { from: at, insert: state.lineBreak },
+    selection: { anchor: at + state.lineBreak.length },
+    userEvent: 'input',
+    scrollIntoView: true
   })
   return true
 }

@@ -7,6 +7,7 @@ import { assetUrl, baseName, kindOf } from '../lib/media'
 import { useLightbox } from '../ui/lightbox'
 import { pickAsset } from '../ui/picker'
 import { coverImgUrl, useImageStudio } from '../ui/imageStudio'
+import { trashAssetWithConfirm } from '../ui/assetTrash'
 import { openConfirm } from '../ui/dialogs'
 
 const STATUS_OPTIONS: { value: DocStatus; label: string }[] = [
@@ -116,8 +117,20 @@ export function Inspector(): React.ReactElement {
                   {kindOf(p) === 'video' ? '▶' : '📄'}
                 </div>
               )}
-              <button className="insp-thumb-x" onClick={() => detachImage(p)} title="제거">
+              {/*
+                두 동작을 **나눠 둔다** — 겹쳐 보이지만 결과가 전혀 다르다.
+                 × = 이 문서에서 떼기(파일은 자료 폴더에 그대로 — 다른 문서가 쓰고 있을 수 있다)
+                 🗑 = 파일까지 휴지통으로(AI로 만들어 놓고 마음에 안 드는 그림을 없애는 길)
+              */}
+              <button className="insp-thumb-x" onClick={() => detachImage(p)} title="이 문서에서 떼기(파일은 남음)">
                 ×
+              </button>
+              <button
+                className="insp-thumb-trash"
+                onClick={() => void trashAssetWithConfirm(p)}
+                title="파일까지 휴지통으로"
+              >
+                🗑
               </button>
             </div>
           ))}

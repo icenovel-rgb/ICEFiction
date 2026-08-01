@@ -58,7 +58,7 @@ npm run dist:mac   # (macOS에서 실행) dmg → release/  (무서명, 배포 �
 
 ```bash
 # package.json 의 version 을 올린 뒤
-git tag v0.11.0 && git push origin v0.11.0
+git tag v0.12.0 && git push origin v0.12.0
 ```
 
 둘 다 `npm ci` → `typecheck` → `npm test` → `build` 를 거치므로, 테스트가 깨지면 설치 파일이 나오지

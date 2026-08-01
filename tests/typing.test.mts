@@ -5,7 +5,7 @@
  * CodeMirror 없이 문자열만으로 검증할 수 있게 순수 함수로 떼어 뒀다.
  */
 import assert from 'node:assert/strict'
-import { emptyQuotePair, quoteAction } from '../src/shared/quotePair'
+import { emptyQuotePair, quoteAction, quoteExitLen } from '../src/shared/quotePair'
 import { BULLET, dashRewrite } from '../src/shared/dash'
 
 let pass = 0
@@ -133,4 +133,106 @@ function ok(label: string): void {
   ok('불릿: 첫 `-` 하나·다른 글자는 그대로')
 }
 
-console.log(`\n✅ 입력 도우미(자동 짝·불릿): ${pass}개 검증 통과`)
+// ── Enter로 따옴표 밖으로(§6.1c) ──
+// 짝을 자동으로 넣어 줬으니 닫을 때도 손이 덜 가야 한다. 커서 **뒤에 닫는 부호만** 남았다면
+// Enter 한 번이 그 부호를 건너뛰고 다음 줄로 내려간다(닫는 따옴표를 또 치지 않는다).
+
+// 16) 대사를 다 쓰고 Enter — 닫는 부호 하나를 건너뛴다
+{
+  assert.equal(quoteExitLen('"어서 와.', '"'), 1)
+  assert.equal(quoteExitLen('“어서 와.', '”'), 1)
+  assert.equal(quoteExitLen('「대사', '」'), 1)
+  ok('따옴표 탈출: 커서 뒤가 닫는 부호 하나면 1칸 건너뛴다')
+}
+
+// 17) 겹친 부호도 통째로 벗어난다("그가 「말」" 안쪽에서 Enter)
+{
+  assert.equal(quoteExitLen('"그가 「말', '」"'), 2)
+  ok('따옴표 탈출: 겹친 부호는 함께 건너뛴다')
+}
+
+// 18) 들여쓴 대사(전각공백)에서도 연다 — 여는 부호를 줄 앞에서 찾을 수 있어야 한다
+{
+  assert.equal(quoteExitLen('　"들여쓴 대사', '"'), 1)
+  ok('따옴표 탈출: 들여쓴 대사에서도 동작')
+}
+
+// 19) 뒤에 글이 남아 있으면 손대지 않는다 — 줄 중간의 Enter는 평소대로 줄을 가른다
+{
+  assert.equal(quoteExitLen('"어서 와.', '" 그가 말했다.'), 0)
+  assert.equal(quoteExitLen('"어서 와.', '"  '), 0, '줄 끝 공백까지 삼킴(하드 브레이크 오염)')
+  ok('따옴표 탈출: 닫는 부호 뒤에 글·공백이 있으면 개입하지 않는다')
+}
+
+// 20) 여는 부호가 앞에 없으면 짝이 아니다 — 홀로 떠 있는 부호를 건너뛰지 않는다
+{
+  assert.equal(quoteExitLen('그냥 문장', '"'), 0)
+  assert.equal(quoteExitLen('「낫표만 열었다', '"'), 0, '다른 계열 부호를 짝으로 봄')
+  ok('따옴표 탈출: 여는 짝이 줄 앞에 없으면 개입하지 않는다')
+}
+
+// 21) 줄 끝(뒤가 비었거나 부호가 아니면) 평소 Enter
+{
+  assert.equal(quoteExitLen('"어서 와."', ''), 0)
+  assert.equal(quoteExitLen('서술 문장', ''), 0)
+  ok('따옴표 탈출: 커서 뒤가 비면 평소 Enter')
+}
+
+// ── 따옴표 모양 통일과 자동 짝(§6.1c) ──
+// 자판에는 곧은 `"` 하나뿐이다. 둥근 따옴표로 쓰기로 했다면 그 키로 둥근 여닫이를 다 만들어야 한다.
+
+// 22) 둥근으로 정하면 곧은 키를 쳐도 둥근 짝이 들어간다
+{
+  assert.deepEqual(quoteAction('"', '', '', false, 'curly'), {
+    kind: 'pair',
+    open: '“',
+    close: '”'
+  })
+  assert.deepEqual(quoteAction("'", '', '', false, 'curly'), {
+    kind: 'pair',
+    open: '‘',
+    close: '’'
+  })
+  ok('모양 통일: 곧은 키 → 둥근 짝')
+}
+
+// 23) 닫을 때도 곧은 키로 둥근 닫는 부호를 건너뛴다(안 그러면 `”"`가 된다)
+{
+  assert.deepEqual(quoteAction('"', '', '”', false, 'curly'), { kind: 'skip', close: '”' })
+  ok('모양 통일: 곧은 키로 둥근 닫는 부호 건너뛰기')
+}
+
+// 24) 곧은으로 정하면 둥근 키를 쳐도 곧은 짝이 들어간다(되돌리기 방향)
+{
+  assert.deepEqual(quoteAction('“', '', '', false, 'straight'), {
+    kind: 'pair',
+    open: '"',
+    close: '"'
+  })
+  ok('모양 통일: 둥근 키 → 곧은 짝')
+}
+
+// 25) 고른 글 감싸기도 고른 모양으로
+{
+  assert.deepEqual(quoteAction('"', '', '', true, 'curly'), { kind: 'wrap', open: '“', close: '”' })
+  ok('모양 통일: 감싸기도 고른 모양으로')
+}
+
+// 26) 낫표는 모양 축이 없어 통일 대상이 아니다 — 친 그대로
+{
+  assert.deepEqual(quoteAction('「', '', '', false, 'curly'), {
+    kind: 'pair',
+    open: '「',
+    close: '」'
+  })
+  ok('모양 통일: 낫표는 그대로')
+}
+
+// 27) keep이면 지금까지와 똑같다(기본값이 동작을 바꾸지 않는다)
+{
+  assert.deepEqual(quoteAction('"', '', '', false, 'keep'), quoteAction('"', '', '', false))
+  assert.equal(quoteAction('가', '', '', false, 'curly'), null, '따옴표가 아닌 글자에 개입')
+  ok('모양 통일: keep은 지금까지의 동작 그대로')
+}
+
+console.log(`\n✅ 입력 도우미(자동 짝·불릿·따옴표 탈출·모양 통일): ${pass}개 검증 통과`)

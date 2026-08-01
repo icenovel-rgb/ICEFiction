@@ -110,6 +110,7 @@ function Workspace(): React.ReactElement {
   const ingest = useStore((s) => s.ingest)
   const binderOpen = useSettings((s) => s.binderOpen)
   const rightOpen = useSettings((s) => s.rightOpen)
+  const centerPaper = useSettings((s) => s.centerPaper)
   const patch = useSettings((s) => s.patch)
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
@@ -237,7 +238,16 @@ function Workspace(): React.ReactElement {
           </button>
         </div>
       </header>
-      <div className="main">
+      {/*
+        center-paper = 원고를 화면 가운데 고정(§8). 한쪽 패널만 열어도 쓰던 줄이 좌우로 밀리지 않게,
+        열린 패널 **반대쪽에 같은 만큼 여백을 비워 둔다**(패널을 띄워 덮지 않으므로 글자가 안 가려진다).
+        binder-on/right-on이 지금 열려 있는 쪽을 CSS에 알려 주고, 계산은 global.css가 한다.
+      */}
+      <div
+        className={`main${centerPaper ? ' center-paper' : ''}${binderOpen ? ' binder-on' : ''}${
+          rightOpen ? ' right-on' : ''
+        }`}
+      >
         {binderOpen && <Binder />}
         {/* 에디터(CM6 호스트)는 항상 마운트해 둔다 — 언마운트하면 뷰가 다시 안 만들어진다(Editor.tsx 주석).
             섹션 갤러리는 그 위를 덮는 오버레이로 띄운다. */}

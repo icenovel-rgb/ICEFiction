@@ -120,4 +120,47 @@ function apply(
   ok('왕복: 굵게·기울임·밑줄 모두 감싸기 → 해제 = 원본')
 }
 
+// ── ★선택 양끝의 공백은 마커 **밖에** 둔다(사용자 신고) ──
+// 두 가지가 한꺼번에 걸린다.
+//  ① 마크다운은 `**글 **`을 강조로 읽지 않는다(닫는 마커 앞이 공백이면 안 된다) — 별표가 그대로 보인다.
+//  ② 줄 끝 공백 두 칸은 Shift+Enter가 남긴 하드 브레이크다. 마커 안으로 삼키면 줄바꿈 표시가 죽는다.
+
+// 13) 줄 전체(Home→Shift+End)를 골라 굵게 — 끝 공백 두 칸이 마커 밖에 남는다
+{
+  const line = '한 줄 더 간다  '
+  const r = apply(line, 0, line.length, BOLD)
+  assert.equal(r.doc, '**한 줄 더 간다**  ', `하드 브레이크가 마커 안으로 들어감: ${JSON.stringify(r.doc)}`)
+  ok('공백: 줄 끝 공백 두 칸(Shift+Enter)은 마커 밖에 남는다')
+}
+
+// 14) 앞뒤 공백을 걸쳐 골라도 마커는 글자에만 붙는다
+{
+  const r = apply('그가  말했다  .', 2, 9, ITALIC) // '  말했다  ' 를 걸쳐 선택
+  assert.equal(r.doc, '그가  *말했다*  .', `공백까지 감쌈: ${JSON.stringify(r.doc)}`)
+  ok('공백: 선택 양끝 공백은 마커 밖으로 밀어낸다')
+}
+
+// 15) 공백만 골랐으면 마커를 깨뜨리지 않는다(빈 짝만 넣는다)
+{
+  const r = apply('가   나', 1, 4, BOLD)
+  assert.equal(r.doc, '가****   나', `공백만 골랐는데 공백을 감쌈: ${JSON.stringify(r.doc)}`)
+  ok('공백: 공백만 골랐으면 빈 짝만(깨진 마커 금지)')
+}
+
+// 16) 서식이 걸린 줄을 통째로 다시 골라 누르면 해제된다(왕복 — 공백이 있어도)
+{
+  const line = '**한 줄 더 간다**  '
+  const r = apply(line, 0, line.length, BOLD)
+  assert.equal(r.doc, '한 줄 더 간다  ', `줄 끝 공백이 있으면 해제가 안 됨: ${JSON.stringify(r.doc)}`)
+  ok('공백: 줄 끝 공백이 있어도 통째로 골라 해제 가능')
+}
+
+// 17) 밑줄도 같다 — <u>글</u> 뒤에 하드 브레이크가 살아남는다
+{
+  const line = '대사입니다  '
+  const r = apply(line, 0, line.length, UNDERLINE)
+  assert.equal(r.doc, '<u>대사입니다</u>  ')
+  ok('공백: 밑줄도 하드 브레이크를 보존')
+}
+
 console.log(`\n✅ 굵게·기울임·밑줄(inlineMark): ${pass}개 검증 통과`)

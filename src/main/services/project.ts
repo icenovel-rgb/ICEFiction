@@ -14,6 +14,8 @@ import type {
   IngestResult,
   ProjectManifest,
   ProjectSummary,
+  ReplaceAllResult,
+  ReplaceFileResult,
   SaveDocRequest,
   SearchAllOptions,
   SearchAllResult,
@@ -25,6 +27,7 @@ import { writeFileAtomic } from '../lib/atomic'
 import { parseDoc, stringifyDoc } from '../lib/frontmatter'
 import { OPEN_MAX_FILES } from '../../shared/openRequest'
 import { encodeEmbedUrl, posixDir, relPosix } from '../../shared/mdEmbed'
+import { escapeForRegex, replaceInText } from '../../shared/replaceText'
 
 const SCHEMA_VERSION = 1
 const MANIFEST = 'icefiction.json'
@@ -38,6 +41,12 @@ const SECTIONS: { dir: string; type: DocType }[] = [
   { dir: 'notes', type: 'note' },
   { dir: 'style', type: 'style' } // 문체 방 — AI가 항상 이 문체로 쓰게 하는 하네스(§7.2a)
 ]
+
+/**
+ * 되돌릴 거리를 남겨 두는 곳 — 책 전체 바꾸기(§6.9) 직전 원본. 점으로 시작하므로
+ * 바인더·자료 갤러리·AI 목차가 모두 건너뛴다(scanDir·listAssets·collectMd의 공통 규칙).
+ */
+const BACKUP_DIR = '.backups'
 
 /** 문서 표지(챕터 표지 §7.6) — 완성본은 여기에, 글자 없는 원본 아트는 그 아래 숨김 폴더에. */
 const COVER_DIR = 'assets/covers'
@@ -329,7 +338,8 @@ export class ProjectService {
   async searchAll(query: string, opts: SearchAllOptions = {}): Promise<SearchAllResult> {
     const root = this.requireRoot()
     if (!query.trim()) return { files: [], totalMatches: 0, truncated: false }
-    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    // 바꾸기와 **같은 규칙**을 써야 한다(shared/replaceText.ts) — 갈라지면 "3건 찾았는데 2건만 바뀜"이 난다.
+    const escaped = escapeForRegex(query)
     const flags = opts.caseSensitive ? 'g' : 'gi'
     const titleProbe = new RegExp(escaped, opts.caseSensitive ? '' : 'i')
     const files: SearchFileResult[] = []
@@ -384,6 +394,65 @@ export class ProjectService {
     return { files, totalMatches, truncated }
   }
 
+  /**
+   * 책 전체 바꾸기(§6.9) — 찾은 모든 문서의 **본문**에서 낱말을 바꾼다.
+   *
+   * "임시이름"으로 써 두고 나중에 진짜 이름으로 고치는 일은 소설에서 가장 흔한 대량 수정이다.
+   * 예전엔 일부러 뺐었다(결정 D2) — 여러 파일을 한 번에 고치면 Ctrl+Z로 되돌릴 수 없기 때문이다.
+   * 이제 앱이 **되돌릴 거리를 대신 남긴다**: 바꾸기 직전 원본을 `.backups/replace-<시각>/`에
+   * 그대로 복사해 둔다(점으로 시작하는 폴더라 바인더·자료·AI 목차에 뜨지 않는다).
+   *
+   * 바꾸는 곳은 본문뿐이다. 제목·줄거리 같은 **프론트매터는 건드리지 않는다** — 문서의 이름이
+   * 소리 없이 바뀌면 바인더가 통째로 달라 보이고, 그건 사용자가 시킨 일이 아니다.
+   */
+  async replaceAll(
+    query: string,
+    replacement: string,
+    opts: SearchAllOptions = {}
+  ): Promise<ReplaceAllResult> {
+    const root = this.requireRoot()
+    if (!query.trim()) return { files: [], totalReplaced: 0, backupDir: null }
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const backupRel = `${BACKUP_DIR}/replace-${stamp}`
+    const files: ReplaceFileResult[] = []
+    let totalReplaced = 0
+
+    for (const section of SECTIONS) {
+      for (const abs of await this.collectMd(join(root, section.dir))) {
+        let raw: string
+        try {
+          raw = await fs.readFile(abs, 'utf8')
+        } catch {
+          continue
+        }
+        let frontmatter: ReturnType<typeof parseDoc>['frontmatter']
+        let body: string
+        try {
+          ;({ frontmatter, body } = parseDoc(raw))
+        } catch {
+          continue // 파싱 실패 문서는 건너뛴다(searchAll과 같은 태도)
+        }
+        const { text, count } = replaceInText(body, query, replacement, opts.caseSensitive)
+        if (count === 0) continue
+
+        const relPath = toRel(root, abs)
+        // ① 먼저 원본을 백업한다 — 백업이 실패하면 **바꾸지 않는다**(안전망 없는 치환 금지).
+        await writeFileAtomic(join(root, backupRel, relPath), raw)
+        // ② 그다음에 바꾼다.
+        await writeFileAtomic(abs, stringifyDoc(frontmatter, text))
+        files.push({
+          path: relPath,
+          section: section.dir,
+          title: frontmatter.title || basename(relPath, '.md'),
+          count
+        })
+        totalReplaced += count
+      }
+    }
+    return { files, totalReplaced, backupDir: files.length > 0 ? backupRel : null }
+  }
+
   /** 섹션 폴더 아래 .md 절대경로 수집(숨김 제외, 재귀) — 검색용 가벼운 walk. */
   private async collectMd(absDir: string): Promise<string[]> {
     let entries
@@ -429,6 +498,24 @@ export class ProjectService {
     const dest = await uniquePath(join(trash, basename(abs)))
     await fs.rename(abs, dest)
     return this.buildTree()
+  }
+
+  /**
+   * 자료(이미지·동영상·PDF) 파일을 휴지통으로 옮긴다 — AI로 만든 그림을 지우는 길(§6.10).
+   *
+   * 지우지 않고 `trash/`로 **옮기는** 이유는 문서 삭제와 같다. 마음에 안 들어 지운 그림이 사실
+   * 어느 챕터에 박혀 있었다면, 파일이 남아 있어야 되돌릴 수 있다. 탐색기에서 그냥 꺼내 오면 된다.
+   *
+   * `assets/` 안으로만 허용한다 — 원고(.md)는 문서 삭제(trashEntry)가 맡는다.
+   */
+  async trashAsset(relPath: string): Promise<void> {
+    const root = this.requireRoot()
+    const rel = relPath.replace(/\\/g, '/')
+    if (!rel.startsWith('assets/')) throw new Error('자료(assets) 안의 파일만 지울 수 있습니다')
+    const abs = toAbs(root, rel)
+    const trash = join(root, 'trash')
+    await fs.mkdir(trash, { recursive: true })
+    await fs.rename(abs, await uniquePath(join(trash, basename(abs))))
   }
 
   /** 문서/폴더 이름 변경. 문서(.md)는 파일명 + 프론트매터 title을 함께 바꾼다. */

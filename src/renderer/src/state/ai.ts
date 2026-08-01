@@ -12,12 +12,15 @@ import type {
   ChatMessage
 } from '../../../shared/types'
 import { buildStyleAnalysisPrompt, type StyleSample } from '../../../shared/stylePrompt'
+import { collapseBlankLines } from '../../../shared/aiText'
+import { normalizeQuotes } from '../../../shared/quoteStyle'
 import { getSelectionText } from '../lib/editorBridge'
 import { appendGhost, clearGhost, showGhost } from '../lib/ghostText'
 import type { SlashCommand, SlashContext, SlashKind } from '../../../shared/slashCommands'
 import { parseOpenRequests, stripOpenRequests } from '../../../shared/openRequest'
 import { openConfirm } from '../ui/dialogs'
 import { pickAsset } from '../ui/picker'
+import { useSettings } from './settings'
 import { useStore } from './store'
 
 /** 문체 방 경로(§7.2a) — main의 STYLE_DIR과 짝을 이룬다. */
@@ -43,6 +46,34 @@ export const SYSTEM_PROMPT =
   '이 원고는 표준 마크다운(.md)으로 저장됩니다. 마크다운 문법(제목 #, 굵게 **, 기울임 *, 인용 >, ' +
   '목록 -, 이미지 ![](경로))에 대해 물으면 정확히 안내하세요. 이미지·자료를 삽입할 때는 반드시 표준 ' +
   '문법 ![](상대경로)를 쓰고, 옛 방식 ![[..]]는 쓰지 마세요(다른 프로그램 호환).'
+
+/**
+ * 문단을 어떻게 나눌지(§8.1) — **문단 간격이 켜져 있을 때만** 덧붙인다.
+ *
+ * 이 앱의 원고지는 줄마다 아래 여백이 이미 있다. 거기에 관례대로 빈 줄까지 넣으면 여백이 두 겹이
+ * 되어, 사용자가 손으로 쓴 문단(엔터 한 번)과 AI가 쓴 문단의 간격이 서로 어긋난다.
+ */
+const PARAGRAPH_RULE =
+  '\n\n문단은 **빈 줄 없이 줄바꿈 한 번**으로만 나누세요. 이 앱이 문단 사이 간격을 자동으로 벌려 ' +
+  '주므로, 빈 줄을 넣으면 두 배로 벌어집니다.'
+
+/** 지금 설정에 맞춘 시스템 지시 — 원고에 실릴 글을 만드는 요청에 쓴다. */
+export function systemPrompt(): string {
+  return useSettings.getState().paraGapEm > 0 ? SYSTEM_PROMPT + PARAGRAPH_RULE : SYSTEM_PROMPT
+}
+
+/**
+ * 원고에 넣기 직전의 손질 — 모델이 지시를 흘려도 결과는 어긋나지 않게 하는 마지막 그물.
+ *
+ *  · 문단: 빈 줄을 걷어낸다. 단 문단 간격이 0이면 빈 줄이 문단을 나누는 **유일한** 수단이라 그대로 둔다.
+ *  · 따옴표: 고른 모양으로 맞춘다 — 모델은 대개 둥근 따옴표(“ ”)를 쓰는데, 손으로 친 대사는
+ *    자판 그대로 곧은 `"`다. 이 둘이 섞이는 것이 "모양이 다르다"의 진짜 원인이다(§6.1c).
+ */
+export function tidyManuscriptText(text: string): string {
+  const s = useSettings.getState()
+  const paragraphs = s.paraGapEm > 0 ? collapseBlankLines(text) : text
+  return normalizeQuotes(paragraphs, s.quoteStyle)
+}
 
 let seq = 0
 const nextId = (): string => `req-${++seq}`
@@ -129,7 +160,7 @@ function buildMessages(
   prior: ChatMessage[],
   attachments: AIAttachment[]
 ): ChatMessage[] {
-  const out: ChatMessage[] = [{ role: 'system', content: SYSTEM_PROMPT }]
+  const out: ChatMessage[] = [{ role: 'system', content: systemPrompt() }]
   if (contextText) {
     out.push({ role: 'user', content: contextText })
     out.push({ role: 'assistant', content: '네, 이 맥락(등장인물·설정·흐름)을 지키며 돕겠습니다.' })
@@ -333,6 +364,7 @@ export const useAi = create<AiState>((set, get) => ({
 
     const id = nextId()
     const prompt = buildStyleAnalysisPrompt(samples)
+    // 결과가 원고가 아니라 **지침 문서**라 문단 규칙(PARAGRAPH_RULE)은 붙이지 않는다.
     const msgs: ChatMessage[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: prompt }
@@ -425,7 +457,8 @@ window.api.onAiDelta((d) => {
   const s = useAi.getState()
   if (d.requestId !== s.activeRequestId) return
   // 슬래시 명령의 결과는 채팅이 아니라 커서 자리에 흐린 글씨로 실시간으로 쌓인다(§6.1a).
-  if (s.inline?.kind === 'ghost') appendGhost(d.text)
+  // 문단 정리는 누적본에 적용한다 — 빈 줄이 두 델타에 걸쳐 오기도 하기 때문(§8.1).
+  if (s.inline?.kind === 'ghost') appendGhost(d.text, tidyManuscriptText)
   useAi.setState({ streamText: s.streamText + d.text })
 })
 window.api.onAiDone((d) => {
@@ -534,7 +567,7 @@ function finishInline(
   }
   // ghost — 스트리밍 중 델타가 이미 쌓였다. 델타 없이 최종 텍스트만 주는 프로바이더(codex 등)도 있으므로
   // 마지막에 최종본으로 한 번 맞춘다. 비었으면 흐린 글씨를 지운다(빈 제안이 남지 않게).
-  const cur = text.trim()
+  const cur = tidyManuscriptText(text.trim())
   if (cur) {
     showGhost({ from: inline.from, to: inline.to, text: cur, status: 'ready', label: inline.label })
   } else {
@@ -581,7 +614,7 @@ window.api.onAiError((d) => {
       showGhost({
         from: s.inline.from,
         to: s.inline.to,
-        text: s.streamText.trim(),
+        text: tidyManuscriptText(s.streamText.trim()),
         status: 'ready',
         label: s.inline.label
       })

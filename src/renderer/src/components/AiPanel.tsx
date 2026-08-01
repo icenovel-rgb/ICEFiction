@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AIProviderKind, ChatMessage } from '../../../shared/types'
 import { insertOrReplace } from '../lib/editorBridge'
-import { SYSTEM_PROMPT, useAi } from '../state/ai'
+import { systemPrompt, tidyManuscriptText, useAi } from '../state/ai'
 import { useStore } from '../state/store'
 
 const KIND_LABEL: Record<AIProviderKind, string> = {
@@ -42,7 +42,7 @@ function PromptViewer({ onClose }: { onClose: () => void }): React.ReactElement 
   }, [onClose])
 
   const preview: ChatMessage[] = lastPrompt ?? [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: systemPrompt() },
     ...(includeContext && context?.text
       ? [{ role: 'user' as const, content: context.text }]
       : [])
@@ -427,7 +427,8 @@ export function AiPanel(): React.ReactElement {
           <div key={i} className={`ai-msg ai-msg-${m.role}`}>
             <div className="ai-msg-body">{m.content}</div>
             {m.role === 'assistant' && (
-              <button className="ai-insert" onClick={() => insertOrReplace(m.content)}>
+              // 원고에 들어갈 때만 문단을 이 앱 규칙(줄바꿈 한 번)으로 맞춘다 — 화면의 대화는 그대로 둔다.
+              <button className="ai-insert" onClick={() => insertOrReplace(tidyManuscriptText(m.content))}>
                 본문에 넣기
               </button>
             )}

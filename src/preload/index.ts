@@ -23,6 +23,7 @@ import type {
   LibraryInfo,
   ProjectSummary,
   SaveDocRequest,
+  ReplaceAllResult,
   SearchAllOptions,
   SearchAllResult,
   TreeNode
@@ -80,11 +81,17 @@ const api = {
     ipcRenderer.invoke('assets:ingest', absPaths, targetDir),
   importAssets: (): Promise<string[]> => ipcRenderer.invoke('assets:import'),
   listAssets: (): Promise<AssetItem[]> => ipcRenderer.invoke('assets:list'),
+  trashAsset: (relPath: string): Promise<void> => ipcRenderer.invoke('assets:trash', relPath),
   openPdf: (relPath: string): Promise<void> => ipcRenderer.invoke('pdf:open', relPath),
   convertLegacyEmbeds: (): Promise<{ files: number; embeds: number }> =>
     ipcRenderer.invoke('md:convertEmbeds'),
   searchAll: (query: string, opts?: SearchAllOptions): Promise<SearchAllResult> =>
     ipcRenderer.invoke('search:all', query, opts),
+  replaceAll: (
+    query: string,
+    replacement: string,
+    opts?: SearchAllOptions
+  ): Promise<ReplaceAllResult> => ipcRenderer.invoke('search:replaceAll', query, replacement, opts),
   /** 상대 POSIX 경로 → ice-asset:// URL (IPC 불필요, 동기). */
   assetUrl: (relPath: string): string =>
     `ice-asset://asset/${relPath.split('/').map(encodeURIComponent).join('/')}`,

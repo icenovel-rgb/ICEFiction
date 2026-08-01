@@ -2,6 +2,7 @@
  * 보기·집필 환경 설정 패널 — 줄번호/테마/글꼴/글자크기/줄간격/색(BLUEPRINT §8.1).
  * 값은 useSettings(localStorage)에 저장되고 applySettings로 CSS 변수에 즉시 반영된다.
  */
+import { useState } from 'react'
 import {
   effectiveColors,
   firstLineOffsets,
@@ -13,7 +14,8 @@ import {
   type ThemeKey
 } from '../state/settings'
 import { getEditorView } from '../lib/editorBridge'
-import { alignSelection } from '../lib/editorCommands'
+import { alignSelection, unifyQuotes } from '../lib/editorCommands'
+import { QUOTE_STYLE_LABEL, type QuoteStyle } from '../../../shared/quoteStyle'
 import { useHelp } from '../ui/help'
 import { NumberField } from './NumberField'
 import type { BlockAlign } from '../../../shared/align'
@@ -59,6 +61,68 @@ function HelpLink(): React.ReactElement {
   )
 }
 
+/**
+ * 따옴표 모양(§6.1c) — "같은 글꼴인데 왜 모양이 다르냐"에 대한 답과 해결을 한자리에 둔다.
+ *
+ * 원인은 글꼴이 아니라 **글자**다. 자판의 `"`(U+0022)와 출판용 `“ ”`(U+201C·U+201D)는 서로 다른
+ * 글자이고, 손으로 친 대사와 AI가 쓴 대사가 섞이면서 한 원고 안에 두 글자가 함께 있게 된다.
+ * 그래서 고르는 순간부터는 앞으로 치는 것이 그 모양이 되고, 이미 쓴 글은 단추로 한 번에 맞춘다.
+ */
+function QuoteStyleField(): React.ReactElement {
+  const style = useSettings((s) => s.quoteStyle)
+  const patch = useSettings((s) => s.patch)
+  const [msg, setMsg] = useState<string | null>(null)
+
+  function onUnify(): void {
+    const view = getEditorView()
+    if (!view) return
+    if (style === 'keep') {
+      setMsg('먼저 위에서 통일할 모양을 고르세요.')
+      return
+    }
+    const n = unifyQuotes(view, style)
+    setMsg(n === 0 ? '이 문서는 이미 한 모양입니다.' : `따옴표 ${n}개를 맞췄습니다. (Ctrl+Z로 되돌리기)`)
+  }
+
+  return (
+    <div className="vs-quotestyle">
+      <span className="vs-sub">따옴표 모양</span>
+      <div className="vs-align vs-align-doc">
+        {(Object.keys(QUOTE_STYLE_LABEL) as QuoteStyle[]).map((k) => (
+          <button
+            key={k}
+            className={style === k ? 'active' : ''}
+            onClick={() => {
+              patch({ quoteStyle: k })
+              setMsg(null)
+            }}
+            title={
+              k === 'keep'
+                ? '친 그대로 둡니다(지금까지의 동작)'
+                : k === 'straight'
+                  ? '자판 그대로의 곧은 따옴표'
+                  : '출판물에서 쓰는 둥근 따옴표'
+            }
+          >
+            {QUOTE_STYLE_LABEL[k]}
+          </button>
+        ))}
+      </div>
+      <button className="vs-reset" onClick={onUnify} disabled={style === 'keep'}>
+        지금 문서의 따옴표 통일
+      </button>
+      {msg && <span className="vs-quotemsg">{msg}</span>}
+      <span className="insp-hint">
+        모양이 섞여 보이는 건 글꼴 탓이 아니라 <b>글자가 다르기 때문</b>입니다 — 자판의{' '}
+        <code>&quot;</code>(U+0022)와 출판용 <code>“ ”</code>(U+201C·U+201D)는 서로 다른 글자입니다.
+        손으로 친 대사와 AI가 쓴 대사가 섞이면 한 원고에 둘이 함께 남습니다. 모양을 고르면 앞으로
+        치는 따옴표와 AI가 넣는 글이 그 모양으로 맞춰지고, 이미 쓴 글은 위 단추로 한 번에 바꿉니다.
+        낫표(<code>「」</code>)는 건드리지 않습니다.
+      </span>
+    </div>
+  )
+}
+
 export function ViewSettings(): React.ReactElement {
   const s = useSettings()
   const colors = effectiveColors(s)
@@ -91,6 +155,23 @@ export function ViewSettings(): React.ReactElement {
           onChange={(e) => s.patch({ showLineNumbers: e.target.checked })}
         />
       </label>
+
+      {/* 패널 배치 — 원고가 어디에 놓이는지를 정하므로 화면 설정 맨 앞쪽에 둔다(§8). */}
+      <div className="vs-field">
+        <label className="vs-row vs-switch">
+          <span>원고를 화면 가운데 고정</span>
+          <input
+            type="checkbox"
+            checked={s.centerPaper}
+            onChange={(e) => s.patch({ centerPaper: e.target.checked })}
+          />
+        </label>
+        <span className="insp-hint">
+          한쪽 패널만 열어도 <b>쓰던 줄이 좌우로 밀리지 않습니다.</b> 열린 패널 반대쪽에 같은 만큼
+          여백을 비워 두는 방식이라, 패널이 글자를 가리는 일은 없습니다. 창이 좁아 원고 폭이
+          답답하면 끄세요 — 그때는 예전처럼 남은 자리를 원고가 다 씁니다.
+        </span>
+      </div>
 
       <div className="vs-field">
         <span>집필 테마 — 원고 종이 배경 (도구창은 항상 어두운 톤)</span>
@@ -275,9 +356,12 @@ export function ViewSettings(): React.ReactElement {
           />
         </label>
         <span className="insp-hint">
-          따옴표를 치면 닫는 짝까지 들어가고 커서가 안으로 갑니다(닫을 때 한 번 더 치면 건너뜁니다).
-          줄 앞에서 <code>-</code>를 두 번이면 불릿, 세 번이면 가로 구분선(<code>---</code>)입니다.
+          따옴표를 치면 닫는 짝까지 들어가고 커서가 안으로 갑니다. 대사를 다 썼으면{' '}
+          <kbd>Enter</kbd>가 닫는 따옴표 <b>밖으로 나가</b> 다음 줄을 엽니다(닫는 부호를 또 치지
+          않아도 됩니다). 줄 앞에서 <code>-</code>를 두 번이면 불릿, 세 번이면 가로 구분선(
+          <code>---</code>)입니다.
         </span>
+        <QuoteStyleField />
       </div>
 
       <div className="vs-field">

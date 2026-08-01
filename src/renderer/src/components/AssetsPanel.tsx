@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { toStandardEmbed } from '../../../shared/mdEmbed'
 import { assetUrl, baseName } from '../lib/media'
 import { useStore } from '../state/store'
+import { trashAssetWithConfirm } from '../ui/assetTrash'
 import { openConfirm } from '../ui/dialogs'
 import { useLightbox } from '../ui/lightbox'
 
@@ -16,6 +17,7 @@ export function AssetsPanel(): React.ReactElement {
   const loadAssets = useStore((s) => s.loadAssets)
   const importAssets = useStore((s) => s.importAssets)
   const refreshTree = useStore((s) => s.refreshTree)
+  const trashAsset = useStore((s) => s.trashAsset)
   const openLightbox = useLightbox((s) => s.open)
   const [tidyMsg, setTidyMsg] = useState<string | null>(null)
 
@@ -66,8 +68,9 @@ export function AssetsPanel(): React.ReactElement {
       ) : (
         <div className="assets-grid">
           {assets.map((a, i) => (
+            /* 삭제 단추는 타일 **밖**에 둔다 — 단추 안에 단추를 넣을 수 없고, 넣으면 클릭이 겹친다. */
+            <div key={a.path} className="asset-cell">
             <button
-              key={a.path}
               className="asset-tile"
               onClick={() =>
                 isPdf(a.name) ? void window.api.openPdf(a.path) : openLightbox(assets, i)
@@ -97,6 +100,14 @@ export function AssetsPanel(): React.ReactElement {
               )}
               <span className="asset-name">{baseName(a.path)}</span>
             </button>
+            <button
+              className="asset-trash"
+              onClick={() => void trashAssetWithConfirm(a.path)}
+              title="휴지통으로 옮기기"
+            >
+              🗑
+            </button>
+            </div>
           ))}
         </div>
       )}

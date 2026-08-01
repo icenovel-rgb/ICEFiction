@@ -487,6 +487,41 @@ async function main() {
     )
     console.log('  ✓ 따옴표 자동 짝: 빈 짝("") 사이 Backspace → 둘 다 삭제')
 
+    // ── Enter로 따옴표 **밖으로**(§6.1c) — 닫는 부호를 또 치지 않아도 다음 줄로 ──
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.press('Delete')
+    await page.keyboard.type('"') // → ""(커서 안쪽)
+    await page.keyboard.type('어서 와.')
+    await page.keyboard.press('Enter') // 닫는 " 밖으로 나가 새 줄
+    await page.keyboard.type('그가 말했다.')
+    const exited = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.cm-line')).map((l) => l.textContent)
+    )
+    assert.deepEqual(
+      exited,
+      ['"어서 와."', '그가 말했다.'],
+      `Enter가 따옴표 밖으로 못 나감: ${JSON.stringify(exited)}`
+    )
+    console.log('  ✓ 따옴표 탈출: 대사 안에서 Enter → 닫는 부호 건너뛰고 다음 줄')
+
+    // 뒤에 글이 남아 있으면 평소 Enter다 — 줄 가르기를 빼앗지 않는다
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.press('Delete')
+    await page.keyboard.type('"어서 와." 그가 말했다.')
+    await page.keyboard.press('Home')
+    // `"어서 와." 그가…` 에서 닫는 " **바로 앞**(6번째 글자 뒤)으로 — 뒤에 ' 그가…'가 남는 자리
+    for (let i = 0; i < 6; i += 1) await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('Enter')
+    const split = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.cm-line')).map((l) => l.textContent)
+    )
+    assert.deepEqual(
+      split,
+      ['"어서 와.', '" 그가 말했다.'],
+      `닫는 부호 뒤에 글이 있는데도 탈출함(줄 가르기를 빼앗음): ${JSON.stringify(split)}`
+    )
+    console.log('  ✓ 따옴표 탈출: 닫는 부호 뒤에 글이 남으면 평소 Enter(줄 가르기)')
+
     // ── 줄 앞 `--` → 불릿(•) · `-` 세 번 → 구분선(---) (§6.1c) ──
     await page.keyboard.press(`${MOD}+A`)
     await page.keyboard.type('--항목 하나')
@@ -640,6 +675,63 @@ async function main() {
     )
     console.log('  ✓ 밑줄 안쪽 편집 가능(mark 데코는 아톰이 아니어야 한다)')
 
+    /**
+     * ── ★서식 × 줄바꿈 원칙(사용자 신고) ──
+     * ① Shift+Enter 줄을 통째로 골라 굵게 걸면 줄 끝 공백 두 칸(하드 브레이크)이 마커 안으로
+     *    빨려 들어가 줄바꿈 표시가 죽었다 → 마커는 글자에만 붙어야 한다.
+     * ② 대사에 서식을 걸면 줄 첫 글자가 `*`가 되어 '연속 대사 붙이기'가 그 줄만 못 알아봤다.
+     */
+    await page.click('.cm-content')
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.type('시 한 줄')
+    await page.keyboard.press('Shift+Enter') // 하드 브레이크(줄 끝 공백 2칸)
+    await page.keyboard.type('다음 줄')
+    await page.locator('.cm-line', { hasText: '시 한 줄' }).click()
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Shift+End') // 줄 전체 = 공백 두 칸까지 선택
+    await page.keyboard.press(`${MOD}+B`)
+    await page.waitForTimeout(2800)
+    const rawSoftBold = await fs.readFile(join(mdDir, files[0]), 'utf8')
+    assert(
+      rawSoftBold.includes('**시 한 줄**  \n'),
+      `굵게가 하드 브레이크(줄 끝 공백 2칸)를 삼킴:\n${JSON.stringify(rawSoftBold)}`
+    )
+    const softStillTight = await page.evaluate(() => {
+      const l = [...document.querySelectorAll('.cm-line')].find((x) =>
+        (x.textContent || '').includes('시 한 줄')
+      )
+      return { cls: l?.className ?? '', pad: parseFloat(getComputedStyle(l).paddingBottom) }
+    })
+    assert(
+      softStillTight.cls.includes('cm-soft-break') && softStillTight.pad === 0,
+      `굵게를 걸자 Shift+Enter 줄에 문단 간격이 붙음: ${JSON.stringify(softStillTight)}`
+    )
+    console.log('  ✓ 서식×줄바꿈: 굵게를 걸어도 Shift+Enter 줄바꿈이 살아 있다')
+
+    // 서식이 걸린 대사도 다음 대사와 붙는다
+    await page.click('.cm-content')
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.type('그는 문을 열었다.\n"어서 와."\n"오래 기다렸어?"\n우산에서 물이 떨어졌다.')
+    await page.locator('.cm-line', { hasText: '어서 와' }).click()
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Shift+End')
+    await page.keyboard.press(`${MOD}+B`) // 대사 한 줄만 굵게
+    await page.locator('.cm-line', { hasText: '우산에서' }).click()
+    await page.click('.rightpanel-tabs button:has-text("보기")')
+    await tightSwitch.click() // 연속 대사 붙이기 켜기
+    const boldDialogue = await page.evaluate(() => {
+      const l = [...document.querySelectorAll('.cm-line')].find((x) =>
+        (x.textContent || '').includes('어서 와')
+      )
+      return { cls: l?.className ?? '', pad: parseFloat(getComputedStyle(l).paddingBottom) }
+    })
+    assert(
+      boldDialogue.cls.includes('cm-tight-dialogue') && boldDialogue.pad === 0,
+      `굵게 걸린 대사를 대사로 못 알아봄(간격이 남음): ${JSON.stringify(boldDialogue)}`
+    )
+    await tightSwitch.click() // 원복
+    console.log('  ✓ 서식×줄바꿈: 굵게 걸린 대사도 다음 대사와 붙는다')
+
     // ── 도움말 창(F1 · 상단바 ?) — 마크다운 + 이 앱 문법을 한 화면에 ──
     await page.keyboard.press('F1')
     await page.waitForSelector('.help-sheet', { timeout: 4000 })
@@ -655,8 +747,62 @@ async function main() {
     await page.waitForSelector('.help-sheet', { state: 'detached', timeout: 3000 })
     console.log('  ✓ 도움말: F1·상단바 ? 로 열림, Esc·✕ 로 닫힘 + 이 앱 문법 포함')
 
-    // 집중 모드 — 양쪽 패널 접기(원고만) → 다시 펼치기
-    await page.click('.ws-focus')
+    /**
+     * ── 원고 자리 고정(§8) — 한쪽 패널만 열어도 쓰던 줄이 밀리지 않는가 ──
+     *
+     * 요점은 눈에 보이는 위치다. 그래서 CSS 클래스가 아니라 **종이의 실제 중심**을 네 가지 상태
+     * (둘 다 / 왼쪽만 / 오른쪽만 / 둘 다 닫힘)에서 재서 값이 같은지 본다.
+     *
+     * 동시에 **가려지지 않는지도** 본다 — 패널을 원고 위에 띄우는 방식은 글자를 덮어 못 쓴다
+     * (되돌린 접근). 종이의 오른쪽 끝이 오른쪽 패널의 왼쪽 끝을 넘지 않아야 한다.
+     */
+    const paperBox = () =>
+      page.evaluate(() => {
+        const r = document.querySelector('.cm-content').getBoundingClientRect()
+        const rp = document.querySelector('.rightpanel')?.getBoundingClientRect()
+        const bd = document.querySelector('.binder')?.getBoundingClientRect()
+        return {
+          center: Math.round(r.left + r.width / 2),
+          left: Math.round(r.left),
+          right: Math.round(r.right),
+          rpLeft: rp ? Math.round(rp.left) : null,
+          bdRight: bd ? Math.round(bd.right) : null
+        }
+      })
+    const both = await paperBox()
+    assert(
+      both.right <= both.rpLeft && both.left >= both.bdRight,
+      `원고가 패널에 가려짐(띄우기 방식 회귀): ${JSON.stringify(both)}`
+    )
+    console.log('  ✓ 원고 고정: 패널이 글자를 가리지 않는다(겹치지 않음)')
+
+    await page.click('.ws-tools button[title^="오른쪽 패널"]') // 오른쪽만 접기 → 왼쪽 패널만 열린 상태
+    await page.waitForSelector('.rightpanel', { state: 'detached', timeout: 3000 })
+    const leftOnly = await paperBox()
+    assert(
+      Math.abs(leftOnly.center - both.center) <= 2,
+      `오른쪽 패널을 접자 원고가 밀림: ${both.center} → ${leftOnly.center}`
+    )
+    await page.click('.ws-tools button[title^="바인더"]') // 왼쪽도 접기 → 둘 다 닫힘
+    await page.waitForSelector('.binder', { state: 'detached', timeout: 3000 })
+    const none = await paperBox()
+    assert(
+      Math.abs(none.center - both.center) <= 2,
+      `양쪽을 접자 원고가 밀림: ${both.center} → ${none.center}`
+    )
+    await page.click('.ws-tools button[title^="오른쪽 패널"]') // 오른쪽만 열기
+    await page.waitForSelector('.rightpanel', { timeout: 3000 })
+    const rightOnly = await paperBox()
+    assert(
+      Math.abs(rightOnly.center - both.center) <= 2,
+      `오른쪽 패널만 열자 원고가 밀림: ${both.center} → ${rightOnly.center}`
+    )
+    assert(rightOnly.right <= rightOnly.rpLeft, `오른쪽 패널이 원고를 덮음: ${JSON.stringify(rightOnly)}`)
+    await page.click('.ws-tools button[title^="바인더"]') // 둘 다 열림으로 복귀
+    await page.waitForSelector('.binder', { timeout: 3000 })
+    console.log('  ✓ 원고 고정: 둘 다/왼쪽만/오른쪽만/둘 다 닫힘 — 네 상태에서 원고 중심이 같다')
+
+    await page.click('.ws-focus') // 집중 모드(양쪽 접기)
     await page.waitForSelector('.binder', { state: 'detached', timeout: 3000 })
     await page.waitForSelector('.rightpanel', { state: 'detached', timeout: 3000 })
     console.log('  ✓ 집중 모드: 양쪽 패널 접힘(원고만)')
@@ -665,8 +811,185 @@ async function main() {
     await page.waitForSelector('.rightpanel', { timeout: 3000 })
     console.log('  ✓ 집중 모드 해제: 패널 복원')
 
+    /**
+     * 끄면 예전처럼 남은 자리를 원고가 다 쓴다(좁은 창을 위한 탈출구).
+     *
+     * 좌우 패널 너비가 같아진 뒤로 **둘 다 열려 있으면 켜나 끄나 결과가 같다**(비울 차이가 0).
+     * 그래서 차이가 나는 상태 — 한쪽만 열린 상태 — 에서 확인해야 한다. 토글이 오른쪽 패널에
+     * 있으므로 접는 쪽은 바인더다.
+     */
+    await page.click('.ws-tools button[title^="바인더"]') // 왼쪽만 접기
+    await page.waitForSelector('.binder', { state: 'detached', timeout: 3000 })
+    const onRightOnly = await paperBox()
+    await page.click('.rightpanel-tabs button:has-text("보기")')
+    await page.click('.viewset .vs-switch:has-text("원고를 화면 가운데 고정") input')
+    await page.waitForFunction(
+      () => !document.querySelector('.main').classList.contains('center-paper'),
+      undefined,
+      { timeout: 3000 }
+    )
+    const off = await paperBox()
+    assert(
+      off.center !== onRightOnly.center,
+      `고정을 꺼도 배치가 그대로임(토글이 안 먹음): ${off.center}`
+    )
+    console.log('  ✓ 원고 고정 끄기: 예전 배치(남은 자리를 원고가 다 씀)로 복귀')
+    await page.click('.viewset .vs-switch:has-text("원고를 화면 가운데 고정") input') // 되돌리기
+    await page.click('.ws-tools button[title^="바인더"]')
+    await page.waitForSelector('.binder', { timeout: 3000 })
+
+    /**
+     * ── 섹션 갤러리 보기 전환(§6.2) — 세계관은 리스트형이 기본, 눌러서 표지형으로 ──
+     * 세계관·노트는 대부분 그림이 없어 표지형이면 빈 카드만 늘어선다(사용자 지적).
+     */
+    await page.click('.binder-add[title="세계관 추가"]')
+    await page.waitForSelector('.dialog-input', { timeout: 5000 })
+    await page.fill('.dialog-input', '북방 왕국')
+    await page.click('.dialog-confirm')
+    await page.click('.binder-section-label:has-text("세계관")')
+    await page.waitForSelector('.gallery', { timeout: 5000 })
+    await page.waitForSelector('.gal-row', { timeout: 3000 })
+    const listDefault = await page.evaluate(() => ({
+      list: !!document.querySelector('.gal-list'),
+      grid: !!document.querySelector('.gal-grid')
+    }))
+    assert(listDefault.list && !listDefault.grid, '세계관 기본 보기가 리스트형이 아님')
+    console.log('  ✓ 갤러리: 세계관은 리스트형이 기본')
+
+    await page.click('.gal-view button[title^="표지형"]')
+    await page.waitForSelector('.gal-grid', { timeout: 3000 })
+    console.log('  ✓ 갤러리: ▦ 를 누르면 표지형으로 전환')
+
+    // 캐릭터는 얼굴이 표지가 되므로 표지형이 기본이어야 한다(섹션마다 기본이 다르다)
+    await page.click('.binder-section-label:has-text("캐릭터")')
+    await page.locator('.gal-card', { hasText: '김철수' }).waitFor({ timeout: 3000 })
+    console.log('  ✓ 갤러리: 캐릭터는 표지형이 기본(섹션별 기본값)')
+
+    // 다시 세계관 → 방금 고른 표지형이 그 섹션의 선택으로 기억돼 있다
+    await page.click('.binder-section-label:has-text("세계관")')
+    await page.locator('.gal-card', { hasText: '북방 왕국' }).waitFor({ timeout: 3000 })
+    console.log('  ✓ 갤러리: 고른 보기가 섹션별로 기억됨(세계관=표지형)')
+
+    // 기본 표지 색은 문서 타입을 따른다 — 그림이 없어도 어느 방의 문서인지 보인다
+    const coverClass = await page.evaluate(() => document.querySelector('.gal-cover')?.className ?? '')
+    assert(coverClass.includes('t-world'), `세계관 기본 표지에 타입 클래스가 없음: ${coverClass}`)
+    console.log('  ✓ 갤러리: 기본 표지가 문서 타입별 색(t-world)')
+
+    // ── 좌우 패널 너비가 같아야 한다(사용자 요청 — 오른쪽 기준) ──
+    await page.click('.binder-section-label:has-text("원고")')
+    const panelW = await page.evaluate(() => ({
+      binder: Math.round(document.querySelector('.binder').getBoundingClientRect().width),
+      right: Math.round(document.querySelector('.rightpanel').getBoundingClientRect().width)
+    }))
+    assert.equal(panelW.binder, panelW.right, `좌우 패널 너비가 다름: ${JSON.stringify(panelW)}`)
+    console.log(`  ✓ 좌우 패널 너비 같음(${panelW.binder}px)`)
+
+    // ── 제목 줄 위 여백 = 문단 간격의 3배(사용자 요청) ──
+    await page.click('.binder-file:has-text("첫 장")')
+    await page.waitForSelector('.cm-content[contenteditable="true"]', { timeout: 8000 })
+    await page.click('.cm-content')
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.type('앞 문단입니다.\n# 큰 제목\n제목 아래 문단.\n## 작은 제목')
+    await page.locator('.cm-line', { hasText: '앞 문단' }).click() // 커서를 제목 밖으로
+    const headGap = await page.evaluate(() => {
+      const find = (t) =>
+        [...document.querySelectorAll('.cm-line')].find((l) => (l.textContent || '').includes(t))
+      const px = (v) => parseFloat(v)
+      const gap = px(getComputedStyle(find('앞 문단')).paddingBottom)
+      return {
+        gap,
+        h1: px(getComputedStyle(find('큰 제목')).paddingTop),
+        h2: px(getComputedStyle(find('작은 제목')).paddingTop),
+        body: px(getComputedStyle(find('제목 아래 문단')).paddingTop)
+      }
+    })
+    assert(headGap.gap > 0, `문단 간격이 0이라 비교 불가: ${JSON.stringify(headGap)}`)
+    assert(
+      Math.abs(headGap.h1 - headGap.gap * 3) < 1 && Math.abs(headGap.h2 - headGap.gap * 3) < 1,
+      `제목 위 여백이 문단 간격의 3배가 아님: ${JSON.stringify(headGap)}`
+    )
+    assert.equal(headGap.body, 0, `제목이 아닌 줄에 위 여백이 붙음: ${headGap.body}px`)
+    console.log(`  ✓ 제목(#·##) 위 여백 = 문단 간격 ×3 (${headGap.gap}→${headGap.h1}px)`)
+
+    // ── 따옴표 모양 통일(사용자 신고: 같은 글꼴인데 모양이 다르다 = 다른 글자다) ──
+    await page.click('.rightpanel-tabs button:has-text("보기")')
+    await page.click('.vs-quotestyle .vs-align button:has-text("둥근")')
+    await page.click('.cm-content')
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.type('"곧은 키로 친 대사.') // 자판의 " 로 치지만 둥근이 들어가야 한다
+    const curly = await page.evaluate(() => document.querySelector('.cm-line')?.textContent ?? '')
+    assert.equal(curly, '“곧은 키로 친 대사.”', `곧은 키가 둥근 짝으로 안 바뀜: ${JSON.stringify(curly)}`)
+    console.log('  ✓ 따옴표 모양: 자판의 " 를 쳐도 둥근 “ ” 가 들어간다')
+
+    // 섞여 있는 원고를 단추 한 번으로 통일 — 손으로 친 곧은 대사 + 둥근 대사가 섞인 상태를 만든다.
+    // 먼저 '건드리지 않음'으로 돌려 놓아야 친 그대로 섞인다(통일 모드에서는 한쪽으로 모이므로).
+    await page.click('.vs-quotestyle .vs-align button:has-text("건드리지")')
+    await page.click('.cm-content')
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.type('"곧은 대사.')
+    await page.keyboard.press('Enter') // 따옴표 밖으로 → 다음 줄
+    await page.keyboard.type('“둥근 대사.')
+    const mixed = await page.evaluate(() =>
+      [...document.querySelectorAll('.cm-line')].map((l) => l.textContent)
+    )
+    assert.deepEqual(mixed, ['"곧은 대사."', '“둥근 대사.”'], `섞인 상태를 못 만듦: ${JSON.stringify(mixed)}`)
+
+    await page.click('.rightpanel-tabs button:has-text("보기")')
+    await page.click('.vs-quotestyle .vs-align button:has-text("둥근")')
+    await page.click('.vs-quotestyle .vs-reset')
+    const unified = await page.evaluate(() =>
+      [...document.querySelectorAll('.cm-line')].map((l) => l.textContent)
+    )
+    assert.deepEqual(
+      unified,
+      ['“곧은 대사.”', '“둥근 대사.”'],
+      `따옴표 통일이 안 됨: ${JSON.stringify(unified)}`
+    )
+    console.log('  ✓ 따옴표 모양: 섞인 원고를 단추 한 번으로 통일')
+    await page.click('.vs-quotestyle .vs-align button:has-text("건드리지")') // 기본값 원복
+
+    // ── AI 대화는 긁어서 복사할 수 있어야 한다(body의 user-select:none 예외) ──
+    await page.click('.rightpanel-tabs button:has-text("AI")')
+    await page.waitForSelector('.ai-messages', { timeout: 3000 })
+    const aiSelect = await page.evaluate(
+      () => getComputedStyle(document.querySelector('.ai-messages')).userSelect
+    )
+    assert.equal(aiSelect, 'text', `AI 대화가 드래그로 안 긁힘(user-select: ${aiSelect})`)
+    console.log('  ✓ AI 대화: 드래그 선택 가능(user-select: text)')
+
+    /**
+     * ── 자료(AI로 만든 그림) 삭제(§6.10, 사용자 요청) ──
+     * 지우는 게 아니라 `trash/`로 **옮긴다** — 어느 챕터에 박혀 있었다면 되돌릴 수 있어야 한다.
+     */
+    await page.click('.rightpanel-tabs button:has-text("자료")')
+    await page.click('.assets-tools button[title="새로고침"]')
+    await page.waitForSelector('.asset-cell', { timeout: 5000 })
+    const beforeCount = await page.locator('.asset-cell').count()
+    // 어떤 파일이 첫 칸인지는 정렬에 달렸다 — 지울 그 파일의 이름을 미리 읽어 두고 대조한다.
+    const victim = await page.getAttribute('.asset-cell:first-child .asset-tile', 'title')
+    await page.locator('.asset-cell').first().hover()
+    await page.click('.asset-cell:first-child .asset-trash')
+    await page.waitForSelector('.dialog-message', { timeout: 4000 })
+    const trashMsg = (await page.textContent('.dialog-message')) ?? ''
+    assert(
+      trashMsg.includes('휴지통') && trashMsg.includes('그대로 남습니다'),
+      `삭제 확인 문구가 휴지통·본문 영향을 안 알림: ${trashMsg}`
+    )
+    await page.click('.dialog-confirm')
+    await page.waitForFunction(
+      (n) => document.querySelectorAll('.asset-cell').length === n - 1,
+      beforeCount,
+      { timeout: 6000 }
+    )
+    const trashed = await fs.readdir(join(bookDir, 'trash'))
+    assert(
+      trashed.includes(victim),
+      `휴지통에 “${victim}”이 없음(있는 것: ${trashed.join(', ') || '없음'})`
+    )
+    console.log('  ✓ 자료 삭제: 확인 후 목록에서 빠지고 trash/로 옮겨짐(되돌릴 수 있음)')
+
     console.log(
-      '\n✅ 에디터 E2E: 43개 검증 통과 (…+ 따옴표자동짝 + 불릿/구분선 + Shift+Enter + 연속대사 + 굵게/밑줄 + 도움말)'
+      '\n✅ 에디터 E2E: 62개 검증 통과 (…+ 따옴표탈출·모양통일 + 서식×줄바꿈 + 원고 가운데 고정 + 패널 너비 + 제목 여백 + 갤러리 보기전환 + 자료 삭제)'
     )
   } finally {
     await app.close()

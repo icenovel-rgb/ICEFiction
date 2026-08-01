@@ -166,6 +166,28 @@ const gapLineDeco: Record<Exclude<GapKind, null>, Decoration> = {
 }
 
 /**
+ * 제목 줄 위 여백(§8.1) — 제목은 **앞 내용과 떨어져야** 새 마디가 시작된다는 게 보인다.
+ * 값은 CSS가 정한다(문단 간격의 3배) — 문단 간격을 바꾸면 제목 여백도 함께 따라간다.
+ */
+const headingLine = Decoration.line({ class: 'cm-heading-line' })
+
+/** 줄 앞이 `#`~`######` + 공백이면 제목 줄. 들여쓴 제목은 마크다운 제목이 아니므로 뺀다. */
+const HEADING_RE = /^#{1,6}\s/
+
+function headingDecos(view: EditorView, addLine: (lineFrom: number) => void): void {
+  const doc = view.state.doc
+  for (const { from, to } of view.visibleRanges) {
+    let pos = from
+    for (;;) {
+      const line = doc.lineAt(pos)
+      if (HEADING_RE.test(line.text)) addLine(line.from)
+      if (line.to >= to || line.to >= doc.length) break
+      pos = line.to + 1
+    }
+  }
+}
+
+/**
  * 빈 줄을 건너뛰고 다음 '내용 있는' 줄을 찾는다 — 빈 줄로 문단을 갈라 쓴 원고에서도
  * 대사가 이어지는 걸 알아보게. 멀리까지 뒤지지는 않는다(그만큼 벌어져 있으면 이미 장면이 갈렸다).
  */
@@ -346,6 +368,7 @@ function buildDecorations(view: EditorView): { decorations: DecorationSet; atomi
   gapDecos(view, (lineFrom, kind) => {
     if (kind) ranges.push(gapLineDeco[kind].range(lineFrom))
   })
+  headingDecos(view, (lineFrom) => ranges.push(headingLine.range(lineFrom)))
   // 정렬 블록은 여기 넣지 않는다 — block 데코라 StateField(alignField)로 따로 제공한다.
   return { decorations: Decoration.set(ranges, true), atomic: Decoration.set(atomic, true) }
 }

@@ -168,6 +168,24 @@ export interface SearchAllOptions {
   caseSensitive?: boolean
 }
 
+/** 책 전체 바꾸기(§6.9) — 한 문서에서 몇 곳을 바꿨는지. */
+export interface ReplaceFileResult {
+  path: string
+  section: string
+  title: string
+  count: number
+}
+
+export interface ReplaceAllResult {
+  files: ReplaceFileResult[]
+  totalReplaced: number
+  /**
+   * 바꾸기 **직전 원본**을 넣어 둔 폴더(책 폴더 기준 상대경로). 아무것도 안 바꿨으면 null.
+   * 다중 파일 치환은 Ctrl+Z로 되돌릴 수 없어서, 앱이 대신 되돌릴 거리를 남긴다(§6.9 D2).
+   */
+  backupDir: string | null
+}
+
 // ── AI 어시스턴트(BLUEPRINT §7) ──
 
 /** 프로바이더 계열. openai=OpenAI 호환(Ollama·LM Studio·OpenRouter 포함), cli=`claude -p` 등. */
@@ -369,6 +387,11 @@ export interface IceApi {
   ingestFiles(absolutePaths: string[], targetDir?: string): Promise<IngestResult>
   importAssets(): Promise<string[]> // 파일 선택창으로 이미지·자료 반입 → 반입된 상대경로
   listAssets(): Promise<AssetItem[]>
+  /**
+   * 자료 파일(AI로 만든 그림 포함)을 `trash/`로 옮긴다(§6.10). 지우는 게 아니라 옮기는 것이라
+   * 문서에 박혀 있던 그림도 탐색기에서 되돌릴 수 있다. `assets/` 안의 파일만 받는다.
+   */
+  trashAsset(relPath: string): Promise<void>
   assetUrl(relPath: string): string
   /** 문서 표지(제목까지 얹은 완성본)를 저장 — assets/covers/<문서명>.png. 반환 = 루트 기준 상대 경로. */
   saveDocCover(docPath: string, base64Png: string): Promise<string>
@@ -386,6 +409,15 @@ export interface IceApi {
   convertLegacyEmbeds(): Promise<{ files: number; embeds: number }>
   /** 책 전체 검색(§6.9) — 4개 섹션 .md의 제목+본문 부분일치. */
   searchAll(query: string, opts?: SearchAllOptions): Promise<SearchAllResult>
+  /**
+   * 책 전체에서 낱말을 바꾼다(§6.9). 바꾸기 직전 원본은 `.backups/replace-<시각>/`에 남는다 —
+   * 여러 파일 치환은 Ctrl+Z로 못 되돌리기 때문이다.
+   */
+  replaceAll(
+    query: string,
+    replacement: string,
+    opts?: SearchAllOptions
+  ): Promise<ReplaceAllResult>
   // ── AI ──
   buildAiContext(
     currentPath: string | null,

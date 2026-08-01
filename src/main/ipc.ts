@@ -144,6 +144,8 @@ export function registerIpc(): void {
 
   ipcMain.handle('assets:list', async () => projectService.listAssets())
 
+  ipcMain.handle('assets:trash', async (_e, relPath: string) => projectService.trashAsset(relPath))
+
   // PDF를 별도 창(Chromium 내장 PDF 뷰어)으로 연다 — 커스텀 스킴 <iframe>은 렌더 안 되므로 file:// 로.
   ipcMain.handle('pdf:open', async (_e, relPath: string) => {
     const abs = projectService.resolve(relPath) // `..` 탈출은 resolve가 차단
@@ -162,6 +164,12 @@ export function registerIpc(): void {
 
   ipcMain.handle('search:all', async (_e, query: string, opts?: SearchAllOptions) =>
     projectService.searchAll(query, opts)
+  )
+
+  ipcMain.handle(
+    'search:replaceAll',
+    async (_e, query: string, replacement: string, opts?: SearchAllOptions) =>
+      projectService.replaceAll(query, replacement, opts)
   )
 
   ipcMain.handle('assets:import', async () => {

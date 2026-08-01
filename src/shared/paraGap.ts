@@ -25,6 +25,17 @@ const DIALOGUE_OPENERS = new Set(['"', "'", '“', '‘', '「', '『'])
 /** 줄 앞 들여쓰기(전각공백·탭·공백). */
 const LEADING_INDENT = /^[　\t ]+/
 
+/**
+ * 줄 앞에 붙은 **인라인 서식 마커** — 굵게·기울임·취소선·고정폭·밑줄(§6.1d).
+ *
+ * 대사에 서식을 걸면 줄의 첫 글자가 따옴표가 아니라 마커가 된다(`**"어서 와."**`). 그러면 '연속
+ * 대사 붙이기'가 그 줄만 못 알아보고 간격이 들쭉날쭉해진다(사용자 신고). 서식은 대사의 **옷**이지
+ * 대사인지 아닌지를 바꾸지 않으므로, 옷을 벗겨 놓고 판단한다.
+ *
+ * 인용(`>`)·제목(`#`)·목록(`- `)은 일부러 넣지 않았다 — 그것들은 옷이 아니라 **다른 종류의 줄**이다.
+ */
+const LEADING_MARKS = /^(?:\*\*|__|~~|<u>|[*_`])+/
+
 export type GapKind = 'blank' | 'soft' | 'dialogue' | null
 
 /** 내용이 없는 줄인가(공백만 있어도 빈 줄로 본다). */
@@ -32,9 +43,12 @@ function isBlank(text: string): boolean {
   return text.trim() === ''
 }
 
-/** 대사 줄인가 — 들여쓰기를 걷어낸 첫 글자가 따옴표 계열. 인용(>)·제목(#)은 대사가 아니다. */
+/**
+ * 대사 줄인가 — 들여쓰기와 **서식 마커**를 걷어낸 첫 글자가 따옴표 계열.
+ * 인용(>)·제목(#)·목록(* )은 대사가 아니다.
+ */
 export function isDialogueLine(text: string): boolean {
-  const t = text.replace(LEADING_INDENT, '')
+  const t = text.replace(LEADING_INDENT, '').replace(LEADING_MARKS, '')
   if (!t) return false
   return DIALOGUE_OPENERS.has(t[0])
 }

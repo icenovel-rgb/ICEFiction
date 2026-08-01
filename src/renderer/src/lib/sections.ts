@@ -46,6 +46,26 @@ export const TYPE_GLYPH: Record<string, string> = {
   folder: '❑'
 }
 
+/**
+ * 섹션 갤러리를 어떻게 펼칠 것인가(§6.2).
+ *  · cover 표지형 — 그림이 곧 정보인 문서(챕터 표지·인물 얼굴)
+ *  · list  리스트형 — 제목과 줄거리로 훑는 문서(설정·메모·문체)
+ */
+export type GalleryView = 'cover' | 'list'
+
+/**
+ * 섹션별 기본 보기. **표지가 뜻을 갖는 섹션만 표지형**이다 —
+ * 세계관·노트·문체는 대부분 그림이 없어 표지형으로 보면 빈 카드가 줄줄이 늘어선다(사용자 지적).
+ * 사용자가 바꾸면 그 선택이 섹션별로 기억된다(settings.galleryViews).
+ */
+export const SECTION_VIEW: Record<string, GalleryView> = {
+  manuscript: 'cover',
+  characters: 'cover',
+  world: 'list',
+  notes: 'list',
+  style: 'list'
+}
+
 /** 경로의 최상위 섹션(문서 타입·라벨 결정용). */
 export function sectionOf(path: string): string {
   return path.split('/')[0]

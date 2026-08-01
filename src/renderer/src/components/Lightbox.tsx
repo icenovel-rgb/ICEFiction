@@ -4,6 +4,7 @@
  */
 import { useEffect } from 'react'
 import { assetUrl, baseName } from '../lib/media'
+import { trashAssetWithConfirm } from '../ui/assetTrash'
 import { useLightbox } from '../ui/lightbox'
 
 const isPdf = (path: string): boolean => /\.pdf$/i.test(path)
@@ -13,6 +14,7 @@ export function Lightbox(): React.ReactElement | null {
   const index = useLightbox((s) => s.index)
   const close = useLightbox((s) => s.close)
   const step = useLightbox((s) => s.step)
+  const drop = useLightbox((s) => s.drop)
 
   useEffect(() => {
     if (items.length === 0) return
@@ -31,6 +33,14 @@ export function Lightbox(): React.ReactElement | null {
 
   return (
     <div className="lb-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      {/* 크게 봐야 지울지 말지 정할 수 있다 — AI로 만든 그림을 고르는 자리가 바로 여기다(§6.10). */}
+      <button
+        className="lb-trash"
+        onClick={() => void trashAssetWithConfirm(item.path).then((done) => done && drop(item.path))}
+        title="이 자료를 휴지통으로"
+      >
+        🗑 삭제
+      </button>
       <button className="lb-close" onClick={close} title="닫기 (Esc)">
         ✕
       </button>

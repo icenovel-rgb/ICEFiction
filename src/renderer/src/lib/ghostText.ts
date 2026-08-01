@@ -118,12 +118,18 @@ export function showGhost(g: {
   })
 }
 
-/** 스트리밍 델타를 이어 붙인다. */
-export function appendGhost(delta: string): void {
+/**
+ * 스트리밍 델타를 이어 붙인다.
+ *
+ * `tidy`를 주면 **누적본 전체**에 적용한다 — 문단 정리처럼 델타 경계를 걸쳐야 하는 손질
+ * (예: `\n`으로 끝난 조각 + `\n`으로 시작하는 조각) 때문이다. 그래서 tidy는 멱등이어야 한다.
+ */
+export function appendGhost(delta: string, tidy?: (text: string) => string): void {
   const view = getEditorView()
   const cur = getGhost(view)
   if (!view || !cur) return
-  view.dispatch({ effects: setGhost.of({ ...cur, text: cur.text + delta }) })
+  const next = cur.text + delta
+  view.dispatch({ effects: setGhost.of({ ...cur, text: tidy ? tidy(next) : next }) })
 }
 
 /** 제안을 본문에 확정한다(Tab). 제안이 없으면 false를 돌려 다른 키 동작에 양보한다. */

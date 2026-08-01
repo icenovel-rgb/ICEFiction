@@ -10,6 +10,7 @@ import type { Command, EditorView } from '@codemirror/view'
 import { setAlign, type BlockAlign } from '../../../shared/align'
 import { BOLD, ITALIC, toggleMark, UNDERLINE, type MarkStyle } from '../../../shared/inlineMark'
 import { SOFT_BREAK } from '../../../shared/paraGap'
+import { countQuotesToChange, normalizeQuotes, type QuoteStyle } from '../../../shared/quoteStyle'
 
 /** 전각 공백 — 한글 원고 들여쓰기 한 칸. */
 export const INDENT = '　'
@@ -158,6 +159,29 @@ function markCommand(style: MarkStyle): Command {
 export const toggleBold = markCommand(BOLD)
 export const toggleItalic = markCommand(ITALIC)
 export const toggleUnderline = markCommand(UNDERLINE)
+
+/**
+ * 이 문서의 따옴표를 고른 모양으로 통일한다(§6.1c) — 손으로 쓴 대사와 AI가 쓴 대사가
+ * 섞여 곧은/둥근이 뒤죽박죽인 원고를 한 모양으로 모은다.
+ *
+ * 문서를 통째로 갈아끼우지만 **한 트랜잭션**이라 Ctrl+Z 한 번에 원복된다(정렬과 같은 방식).
+ * 커서 자리는 글자 수가 변하지 않으므로 그대로 유지된다.
+ *
+ * @returns 바꾼 글자 수(0이면 이미 통일돼 있다는 뜻 — 부르는 쪽이 그렇게 알린다)
+ */
+export function unifyQuotes(view: EditorView, style: QuoteStyle): number {
+  const before = view.state.doc.toString()
+  const changed = countQuotesToChange(before, style)
+  if (changed === 0) return 0
+  const sel = view.state.selection.main
+  view.dispatch({
+    changes: { from: 0, to: before.length, insert: normalizeQuotes(before, style) },
+    selection: { anchor: sel.anchor, head: sel.head },
+    userEvent: 'input.format'
+  })
+  view.focus()
+  return changed
+}
 
 /** '>' 만 있고 내용이 없는 인용 줄인가(예: ">", "> ", ">>"). */
 const EMPTY_QUOTE_RE = /^\s*>[\s>]*$/

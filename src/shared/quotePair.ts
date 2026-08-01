@@ -7,6 +7,7 @@
  * 이 파일은 **순수 함수만** 담는다 — CodeMirror 없이 문자열만으로 단위 테스트한다(§11).
  * 배선(입력 가로채기·Backspace)은 renderer/lib/typing.ts.
  */
+import { quoteFamilyOf, styledPair, type QuoteStyle } from './quoteStyle'
 
 export interface QuotePair {
   open: string
@@ -51,15 +52,34 @@ export function quoteAction(
   typed: string,
   before: string,
   after: string,
-  hasSelection: boolean
+  hasSelection: boolean,
+  style: QuoteStyle = 'keep'
 ): QuoteAction {
+  /**
+   * 모양 통일(§6.1c) — 고른 모양이 있으면 **친 글자가 아니라 그 모양으로** 넣는다.
+   * 자판에는 곧은 `"` 하나뿐이라, 둥근 따옴표로 쓰려면 여기서 갈아 끼워야 한다.
+   * 낫표는 계열이 없어(quoteFamilyOf가 null) 친 그대로 간다.
+   */
+  const family = quoteFamilyOf(typed)
+  const styled = family ? styledPair(family, style) : null
+
   // ① 닫는 부호를 그 짝 바로 앞에서 쳤다 → 건너뛴다.
   //    대칭 부호(" ')도 여기에 먼저 걸린다 — 대사를 닫는 가장 흔한 손놀림이라 우선순위가 높다.
-  if (!hasSelection && typed === after && QUOTE_PAIRS.some((p) => p.close === typed)) {
-    return { kind: 'skip', close: typed }
+  //    모양을 통일하는 중이면 **친 글자가 아니라 통일된 닫는 부호**와 견준다
+  //    (자판으로 `"`를 쳐서 `”`를 건너뛰어야 하기 때문).
+  const closeToSkip = styled ? styled.close : typed
+  if (
+    !hasSelection &&
+    closeToSkip === after &&
+    (styled != null || QUOTE_PAIRS.some((p) => p.close === typed))
+  ) {
+    return { kind: 'skip', close: closeToSkip }
   }
 
-  const pair = QUOTE_PAIRS.find((p) => p.open === typed)
+  const base = QUOTE_PAIRS.find((p) => p.open === typed)
+  // 통일 모드에서는 **닫는 글자를 쳐도** 여는 짝으로 친 것으로 본다 — 자판의 `"` 하나로 둥근
+  // 여닫이를 모두 만들어야 하고, 위 ①에서 '닫기'는 이미 걸러졌기 때문이다.
+  const pair = styled ?? base
   if (!pair) return null // 우리가 다루는 부호가 아니다
 
   // ② 고른 글이 있으면 감싼다.
@@ -76,4 +96,29 @@ export function quoteAction(
 /** 커서가 **빈 짝** 사이에 있는가(`"|"`) — Backspace 한 번에 둘 다 지우기 위한 판정. */
 export function emptyQuotePair(before: string, after: string): boolean {
   return QUOTE_PAIRS.some((p) => p.open === before && p.close === after)
+}
+
+/**
+ * Enter로 따옴표 **밖으로** 빠져나갈 글자 수(0이면 평소 Enter).
+ *
+ * 짝을 자동으로 넣어 줬으니 닫을 때도 손이 덜 가야 한다 — 대사를 다 쓰면 닫는 따옴표를 한 번 더
+ * 치고 나서야 다음 줄로 내려갈 수 있었다. 커서 뒤에 **닫는 부호만** 남았다면 Enter가 그 부호를
+ * 지나쳐 다음 줄로 데려간다.
+ *
+ * 개입하는 조건을 좁게 잡는다(줄을 가르는 평범한 Enter를 빼앗지 않기 위해):
+ *  · 커서 뒤가 줄 끝까지 **닫는 부호로만** 채워져 있어야 한다 — 공백 한 칸도 안 된다
+ *    (줄 끝 공백 두 칸은 Shift+Enter의 하드 브레이크라, 삼키면 뜻이 달라진다)
+ *  · 그 부호의 **여는 짝이 줄 앞쪽에 있어야** 한다 — 홀로 떠 있는 부호를 건너뛰지 않는다
+ *
+ * @param beforeInLine 줄 시작부터 커서까지
+ * @param afterInLine  커서부터 줄 끝까지
+ */
+export function quoteExitLen(beforeInLine: string, afterInLine: string): number {
+  if (!afterInLine) return 0
+  const chars = Array.from(afterInLine)
+  const pairs = chars.map((c) => QUOTE_PAIRS.find((p) => p.close === c))
+  if (pairs.some((p) => !p)) return 0 // 닫는 부호가 아닌 글자가 섞였다 → 평소 Enter
+  // 커서 바로 뒤 부호의 여는 짝이 줄 앞에 있어야 '내가 연 대사'다.
+  if (!beforeInLine.includes(pairs[0]!.open)) return 0
+  return afterInLine.length
 }

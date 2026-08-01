@@ -116,4 +116,47 @@ const L = (s: string): string[] => s.split('\n')
   ok('전체: 마지막 줄·빈 문서 안전')
 }
 
+// ── ★서식이 걸린 대사(사용자 신고) ──
+// 대사에 굵게·기울임·밑줄을 걸면 줄 첫 글자가 따옴표가 아니라 마커(`*`, `<`)가 된다.
+// 그러면 '연속 대사 붙이기'가 그 줄만 못 알아보고 간격이 들쭉날쭉해진다.
+
+// 13) 마커를 걷어내고 대사를 알아본다
+{
+  for (const line of [
+    '**"어서 와."**',
+    '*"어서 와."*',
+    '***"어서 와."***',
+    '<u>"어서 와."</u>',
+    '~~"어서 와."~~',
+    '__"어서 와."__',
+    '**「대사」**'
+  ]) {
+    assert.equal(isDialogueLine(line), true, `서식 걸린 대사를 못 알아봄: ${line}`)
+  }
+  ok('대사 판정: 굵게·기울임·밑줄·취소선이 걸려도 대사')
+}
+
+// 14) 들여쓰기 + 서식이 함께 와도 알아본다
+{
+  assert.equal(isDialogueLine('　**"들여쓴 대사"**'), true)
+  ok('대사 판정: 들여쓰기 + 서식 조합')
+}
+
+// 15) 마커를 걷어내도 대사가 아니면 대사가 아니다(과잉 판정 금지)
+{
+  assert.equal(isDialogueLine('**그가 말했다.**'), false, '서술을 대사로 봄')
+  assert.equal(isDialogueLine('> "인용 안의 대사"'), false)
+  assert.equal(isDialogueLine('# "제목"'), false)
+  assert.equal(isDialogueLine('* 목록 항목'), false, '목록을 대사로 봄')
+  assert.equal(isDialogueLine('**'), false)
+  ok('대사 판정: 마커를 걷어내도 서술·인용·제목·목록은 대사 아님')
+}
+
+// 16) 서식이 걸린 대사끼리도 붙는다(이 버그의 실제 증상)
+{
+  const kinds = gapKinds(L('비가 내렸다.\n**"어서 와."**\n"오래 기다렸어?"\n그는 우산을 접었다.'))
+  assert.deepEqual(kinds, [null, 'dialogue', null, null])
+  ok('전체: 굵게 걸린 대사도 다음 대사와 붙는다')
+}
+
 console.log(`\n✅ 문단 간격 판정(paraGap): ${pass}개 검증 통과`)

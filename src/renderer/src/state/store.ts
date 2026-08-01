@@ -13,6 +13,7 @@ import type {
   Frontmatter,
   LibraryInfo,
   ProjectSummary,
+  ReplaceAllResult,
   TreeNode
 } from '../../../shared/types'
 import { useSession } from './session'
@@ -36,6 +37,11 @@ interface State {
   pendingJump: { from: number; to: number; scrollTop?: number } | null
   frontmatter: Frontmatter
   body: string
+  /**
+   * 열린 문서를 **앱이 통째로 갈아끼운 횟수**. 전체 바꾸기처럼 파일이 밖에서 바뀌면 올린다.
+   * Editor가 이 값을 보고 본문을 다시 싣는다 — 경로가 그대로면 문서 전환 effect가 안 돌기 때문이다.
+   */
+  docVersion: number
   dirty: boolean
   saving: boolean
   sessionStartChars: number
@@ -62,6 +68,12 @@ interface State {
   setBody: (body: string) => void
   setFrontmatter: (patch: Partial<Frontmatter>) => void
   saveNow: () => Promise<void>
+  /** 책 전체 바꾸기(§6.9) — 열려 있는 문서까지 안전하게 갱신하고 결과를 돌려준다. */
+  replaceAll: (
+    query: string,
+    replacement: string,
+    opts?: { caseSensitive?: boolean }
+  ) => Promise<ReplaceAllResult>
   refreshTree: () => Promise<void>
   createDoc: (dir: string, type: DocType, title: string) => Promise<void>
   createFolder: (dir: string, name: string) => Promise<void>
@@ -70,6 +82,8 @@ interface State {
   ingest: (absPaths: string[], targetDir?: string) => Promise<void>
   loadAssets: () => Promise<void>
   importAssets: () => Promise<string[]>
+  /** 자료 파일(AI로 만든 그림 포함)을 휴지통으로 — 목록·프론트매터에서도 함께 걷어낸다(§6.10). */
+  trashAsset: (path: string) => Promise<void>
   attachImage: (path: string) => void
   detachImage: (path: string) => void
 }
@@ -139,6 +153,7 @@ export const useStore = create<State>((set, get) => {
     pendingJump: null,
     frontmatter: {},
     body: '',
+    docVersion: 0,
     dirty: false,
     saving: false,
     sessionStartChars: 0,
@@ -267,6 +282,33 @@ export const useStore = create<State>((set, get) => {
       }
     },
 
+    /**
+     * 책 전체 바꾸기(§6.9) — 순서가 안전성의 전부다.
+     *
+     * ① **먼저 저장한다.** 열려 있는 문서에 미저장 변경이 있으면, 바꾸기가 끝난 뒤 뒤늦게 도착한
+     *    자동 저장이 방금 바꾼 파일을 옛 본문으로 덮어쓴다(가장 위험한 경로).
+     * ② 바꾼다(원본은 main이 .backups/에 복사해 둔다).
+     * ③ 열린 문서가 바뀐 축에 들면 **디스크에서 다시 읽어** 화면과 파일을 맞춘다. docVersion을
+     *    올려야 Editor가 본문을 다시 싣는다(경로가 그대로라 문서 전환 effect는 안 돈다).
+     */
+    async replaceAll(query, replacement, opts) {
+      if (get().dirty) await get().saveNow()
+      const res = await window.api.replaceAll(query, replacement, opts)
+      if (res.totalReplaced === 0) return res
+      await get().refreshTree()
+      const path = get().activePath
+      if (path && res.files.some((f) => f.path === path)) {
+        const doc: DocContent = await window.api.readDoc(path)
+        set((s) => ({
+          frontmatter: doc.frontmatter,
+          body: doc.body,
+          dirty: false,
+          docVersion: s.docVersion + 1
+        }))
+      }
+      return res
+    },
+
     async refreshTree() {
       set({ tree: await window.api.refreshTree() })
     },
@@ -313,6 +355,19 @@ export const useStore = create<State>((set, get) => {
         await get().loadAssets()
       }
       return imported
+    },
+
+    /**
+     * 자료 삭제 — 파일을 휴지통으로 옮기고, **열린 문서의 프론트매터에서도 걷어낸다.**
+     * 파일만 지우면 인스펙터에 깨진 썸네일이 남는다(첨부 목록은 경로만 들고 있기 때문).
+     * 본문에 `![](…)`로 박은 자리는 그대로 둔다 — 원고를 앱이 말없이 고치지 않는다는 원칙(§7.4).
+     */
+    async trashAsset(path) {
+      await window.api.trashAsset(path)
+      const images = get().frontmatter.images ?? []
+      if (images.includes(path)) get().setFrontmatter({ images: images.filter((p) => p !== path) })
+      await get().loadAssets()
+      await get().refreshTree()
     },
 
     attachImage(path) {

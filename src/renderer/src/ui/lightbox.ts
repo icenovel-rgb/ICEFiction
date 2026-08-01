@@ -14,6 +14,8 @@ interface LightboxState {
   open: (items: Array<LightboxItem | string>, index: number) => void
   close: () => void
   step: (delta: number) => void
+  /** 지운 자료를 목록에서 빼고 이웃으로 옮긴다(마지막 한 장이면 창을 닫는다). */
+  drop: (path: string) => void
 }
 
 export const useLightbox = create<LightboxState>((set, get) => ({
@@ -29,5 +31,15 @@ export const useLightbox = create<LightboxState>((set, get) => ({
     const { items, index } = get()
     if (items.length === 0) return
     set({ index: (index + delta + items.length) % items.length })
+  },
+  drop: (path) => {
+    const { items, index } = get()
+    const next = items.filter((it) => it.path !== path)
+    if (next.length === 0) {
+      set({ items: [], index: 0 })
+      return
+    }
+    // 지운 자리를 그대로 물려받는다(맨 끝을 지웠으면 한 칸 앞으로) — 연달아 지우기 편하게.
+    set({ items: next, index: Math.min(index, next.length - 1) })
   }
 }))
