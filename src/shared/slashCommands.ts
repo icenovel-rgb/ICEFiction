@@ -6,6 +6,7 @@
  *
  * 프롬프트 조립은 순수 함수다 — 그대로 단위 테스트한다.
  */
+import { hasSoftBreak } from './paraGap'
 
 export type SlashKind = 'ghost' | 'synopsis' | 'image'
 
@@ -43,8 +44,8 @@ export interface SlashCommand {
   outcome: string
   kind: SlashKind
   /**
-   * 대상(선택 영역 또는 커서가 놓인 문단)을 결과로 **갈아끼우는** 명령인가.
-   * `/`를 치는 순간 선택이 지워지므로(에디터 기본 동작), 대상은 커서가 있는 문단으로 잡는다.
+   * 대상을 결과로 **갈아끼우는** 명령인가. `/`를 치는 순간 선택이 지워지므로(에디터 기본 동작),
+   * 대상은 커서가 놓인 **문단 하나**다(= 그 줄 — `paragraphAt`). 원고 전체가 아니다.
    */
   replaces?: boolean
   /**
@@ -56,14 +57,52 @@ export interface SlashCommand {
   build?: (ctx: SlashContext) => string
 }
 
-/** 커서가 놓인 문단(빈 줄 사이 덩어리)의 범위. 없으면 null. */
+/** 그 자리가 속한 줄의 시작 오프셋. */
+function lineStartAt(doc: string, pos: number): number {
+  if (pos <= 0) return 0
+  const nl = doc.lastIndexOf('\n', pos - 1)
+  return nl < 0 ? 0 : nl + 1
+}
+
+/** 그 자리가 속한 줄의 끝 오프셋(줄바꿈 앞). */
+function lineEndAt(doc: string, pos: number): number {
+  const nl = doc.indexOf('\n', pos)
+  return nl < 0 ? doc.length : nl
+}
+
+/**
+ * 커서가 놓인 **문단**의 범위. 빈 줄이면 null.
+ *
+ * 이 앱에서 한 문단은 **한 줄**이다(§8.1) — 문단 사이를 빈 줄로 벌리지 않고 줄 아래 여백
+ * (`--paper-para-gap`)으로 벌린다. AI가 준 글도 빈 줄을 걷어내 넣는다(`collapseBlankLines`).
+ *
+ * ⚠️ 예전에는 **빈 줄(`\n\n`) 사이 덩어리**를 문단으로 잡았다. 그런데 이 앱 원고에는 빈 줄이
+ *   아예 없으므로 그 덩어리가 곧 **문서 전체**였다 — `/다듬기`를 부르면 한 문단이 아니라 원고를
+ *   통째로 다시 쓰고 앉아 있었다(사용자 신고). 화면에서 한 문단으로 보이는 것을 그대로 잡는다.
+ *
+ * Shift+Enter로 이어 붙인 줄(줄 끝 공백 두 칸 = 하드 브레이크)은 **같은 문단**이므로 함께 담는다 —
+ * 눈에 한 덩이로 보이는 것이 한 문단이라는 규칙을 여기서도 지킨다.
+ */
 export function paragraphAt(doc: string, pos: number): { from: number; to: number } | null {
-  const before = doc.lastIndexOf('\n\n', Math.max(0, pos - 1))
-  const after = doc.indexOf('\n\n', pos)
-  const from = before < 0 ? 0 : before + 2
-  const to = after < 0 ? doc.length : after
-  if (to <= from) return null
-  return doc.slice(from, to).trim() ? { from, to } : null
+  const text = doc ?? ''
+  const p = Math.max(0, Math.min(pos, text.length))
+  let from = lineStartAt(text, p)
+  let to = lineEndAt(text, p)
+  if (!text.slice(from, to).trim()) return null // 빈 줄 — 엉뚱한 문단을 고치지 않는다
+
+  // 위로: 앞 줄이 Shift+Enter로 끝났으면 이 줄은 그 문단의 뒷줄이다.
+  while (from > 0) {
+    const prevFrom = lineStartAt(text, from - 1)
+    if (!hasSoftBreak(text.slice(prevFrom, from - 1))) break
+    from = prevFrom
+  }
+  // 아래로: 이 줄이 Shift+Enter로 끝났으면 다음 줄까지 한 문단이다(빈 줄에서는 멈춘다).
+  while (to < text.length && hasSoftBreak(text.slice(lineStartAt(text, to), to))) {
+    const next = lineEndAt(text, to + 1)
+    if (!text.slice(to + 1, next).trim()) break
+    to = next
+  }
+  return { from, to }
 }
 
 /** 커서 앞 본문을 얼마나 보여 줄지 — 맥락(§7.2)이 전체를 이미 담으므로 여기선 직전 흐름만. */
@@ -101,7 +140,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   {
     id: 'polish',
     label: '/다듬기',
-    detail: '커서가 놓인 문단을 윤문합니다',
+    detail: '커서가 놓인 문단 하나만 윤문합니다',
     icon: '✨',
     outcome: 'Tab 확정',
     kind: 'ghost',

@@ -64,22 +64,50 @@ assert.equal(beforeText(long, 5000).length, BEFORE_CAP)
 assert.equal(beforeText('짧은 글', 3), '짧은 글'.slice(0, 3))
 ok(`커서 직전 본문은 ${BEFORE_CAP}자까지`)
 
-// 6) 문단 범위 — 빈 줄 사이 덩어리
-const doc = '첫 문단이다.\n\n두 번째 문단이다.\n계속 이어진 줄.\n\n세 번째.'
+// 6) ★문단 범위 — 이 앱에서 한 문단은 **한 줄**이다(§8.1). 처음·중간·끝 모두 그 줄만.
+const doc = '첫 문단이다.\n두 번째 문단이다.\n계속 이어진 줄.\n세 번째.'
 const mid = paragraphAt(doc, doc.indexOf('계속'))!
-assert.equal(doc.slice(mid.from, mid.to), '두 번째 문단이다.\n계속 이어진 줄.')
+assert.equal(doc.slice(mid.from, mid.to), '계속 이어진 줄.')
 const first = paragraphAt(doc, 2)!
 assert.equal(doc.slice(first.from, first.to), '첫 문단이다.')
 const last = paragraphAt(doc, doc.length - 1)!
 assert.equal(doc.slice(last.from, last.to), '세 번째.')
-ok('문단 범위 — 처음·중간·끝 모두 정확')
+// 줄 끝(다음 줄과 맞닿은 자리)에서도 그 줄이다 — `/다듬기`는 대개 문단 끝에서 부른다.
+const atEnd = paragraphAt(doc, doc.indexOf('\n'))!
+assert.equal(doc.slice(atEnd.from, atEnd.to), '첫 문단이다.')
+ok('문단 범위 — 한 줄이 한 문단(처음·중간·끝·줄 끝)')
+
+// 6b) ★회귀(사용자 신고): 빈 줄이 하나도 없는 원고에서 /다듬기가 **원고 전체**를 잡았다.
+//     빈 줄(`\n\n`)을 문단 경계로 삼은 탓인데, 이 앱 원고에는 빈 줄이 아예 없다(collapseBlankLines).
+{
+  const 원고 = ['비가 내렸다.', '그는 우산을 폈다.', '골목은 조용했다.'].join('\n')
+  const 가운데 = paragraphAt(원고, 원고.indexOf('우산'))!
+  assert.equal(원고.slice(가운데.from, 가운데.to), '그는 우산을 폈다.', '한 문단이 아니라 통째로 잡음')
+  assert.ok(가운데.to < 원고.length, '문서 끝까지 물고 감')
+  ok('빈 줄 없는 원고 — 그 문단만 잡는다(전체 다듬기 회귀 방지)')
+}
+
+// 6c) Shift+Enter로 이어 붙인 줄(줄 끝 공백 두 칸)은 **같은 문단**이라 함께 잡는다
+{
+  const 이어진 = '앞 문단.\n대사 첫 줄.  \n대사 둘째 줄.  \n대사 셋째 줄.\n뒤 문단.'
+  const r = paragraphAt(이어진, 이어진.indexOf('둘째'))!
+  assert.equal(이어진.slice(r.from, r.to), '대사 첫 줄.  \n대사 둘째 줄.  \n대사 셋째 줄.')
+  // 하드 브레이크가 없는 이웃 줄까지 넘보지는 않는다.
+  const 앞 = paragraphAt(이어진, 1)!
+  assert.equal(이어진.slice(앞.from, 앞.to), '앞 문단.')
+  ok('Shift+Enter로 이어진 줄은 한 문단으로 함께 잡는다')
+}
 
 // 7) 빈 줄에 커서가 있으면 대상 없음(엉뚱한 문단을 고치지 않는다)
 const gap = '앞 문단\n\n\n\n뒤 문단'
 assert.equal(paragraphAt(gap, 6), null, '빈 줄에서는 null')
 assert.deepEqual(paragraphAt(gap, 8), { from: 8, to: 12 }, '뒤 문단 첫 글자에서는 그 문단')
 assert.equal(paragraphAt('', 0), null)
-ok('빈 줄에서는 대상을 잡지 않는다')
+assert.equal(paragraphAt('   \n내용', 1), null, '공백만 있는 줄도 빈 줄')
+// 범위 밖 커서에도 터지지 않는다(문서가 바뀐 뒤 늦게 온 요청).
+assert.deepEqual(paragraphAt('한 줄뿐', 999), { from: 0, to: 4 })
+assert.deepEqual(paragraphAt('한 줄뿐', -5), { from: 0, to: 4 })
+ok('빈 줄에서는 대상을 잡지 않는다 · 범위 밖 커서 안전')
 
 // 8) ★한 줄 지시 — 넣으면 요청문 끝에 붙고, 안 넣으면 아무것도 붙지 않는다(§6.1b)
 {

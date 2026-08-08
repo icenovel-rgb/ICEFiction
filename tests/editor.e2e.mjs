@@ -33,6 +33,9 @@ async function main() {
   })
   try {
     const page = await app.firstWindow()
+    // 화면에서 터진 예외는 조용히 삼켜지고 **엉뚱한 단계**에서 실패로 나타난다(자동저장이 안 되는 식).
+    // 실패를 원인 옆에서 보려면 여기서 흘려 준다.
+    page.on('pageerror', (e) => console.log('   [pageerror]', e.message))
     await page.waitForSelector('.lib-new', { timeout: 15000 })
     console.log('  ✓ 책장(서재) 화면 로드')
 
@@ -911,6 +914,88 @@ async function main() {
     assert.equal(headGap.body, 0, `제목이 아닌 줄에 위 여백이 붙음: ${headGap.body}px`)
     console.log(`  ✓ 제목(#·##) 위 여백 = 문단 간격 ×3 (${headGap.gap}→${headGap.h1}px)`)
 
+    /**
+     * ── 원고 아래 여백을 클릭하면 커서가 원고 끝으로(§8.2, 사용자 신고) ──
+     * 그 여백은 `.cm-scroller`의 padding이라 편집 영역 밖이다. 예전에는 눌러도 아무 일도 없이
+     * 포커스만 빠졌다 — 글자 위를 다시 찾아 클릭해야 이어 쓸 수 있었다.
+     * 커서를 일부러 **맨 위 줄**에 둔 채 아래 여백을 눌러, 커서가 끝으로 옮겨졌는지 타이핑으로 잰다.
+     */
+    await page.click('.cm-content')
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.type('첫 줄이다.\n둘째 줄이다.\n마지막 줄이다.')
+    await page.locator('.cm-line', { hasText: '첫 줄이다' }).click()
+    const pad = await page.evaluate(() => {
+      const content = document.querySelector('.cm-content').getBoundingClientRect()
+      const scroller = document.querySelector('.cm-scroller').getBoundingClientRect()
+      return {
+        x: Math.round(content.left + content.width / 2),
+        y: Math.round((content.bottom + scroller.bottom) / 2), // 글 아래 빈 여백 한복판
+        room: Math.round(scroller.bottom - content.bottom)
+      }
+    })
+    assert(pad.room > 40, `아래 여백이 없어 클릭할 자리가 없음: ${pad.room}px`)
+    await page.mouse.click(pad.x, pad.y)
+    const padFocus = await page.evaluate(() => document.activeElement?.className ?? '')
+    assert(padFocus.includes('cm-content'), `여백 클릭 후 에디터에 포커스가 없음: "${padFocus}"`)
+    await page.keyboard.type(' 이어 쓴다.')
+    const padLines = await page.evaluate(() =>
+      [...document.querySelectorAll('.cm-line')].map((l) => l.textContent)
+    )
+    assert.deepEqual(
+      padLines,
+      ['첫 줄이다.', '둘째 줄이다.', '마지막 줄이다. 이어 쓴다.'],
+      `여백 클릭 뒤 커서가 원고 끝이 아님: ${JSON.stringify(padLines)}`
+    )
+    console.log(`  ✓ 원고 아래 여백(${pad.room}px) 클릭 → 커서가 원고 끝으로 + 바로 이어 쓸 수 있음`)
+
+    /**
+     * ── 줄표 줄 내어쓰기(사용자 요청) ──
+     * 줄표로 시작한 줄이 다음 줄로 넘어가면, 넘어간 줄이 줄표 **밑**이 아니라 줄표 뒤 **글자**에
+     * 맞아야 한다. 계산이 맞아도 실제로 맞는지는 브라우저 조판에 달렸으므로 **화면에서 직접 잰다** —
+     * 첫 줄의 '— ' 오른쪽 끝(=글자가 시작하는 x)과 넘어간 줄의 왼쪽 끝이 같은 자리여야 한다.
+     */
+    await page.click('.cm-content')
+    await page.keyboard.press(`${MOD}+A`)
+    await page.keyboard.type(
+      '— 그가 무슨 말을 하려다 말았다. ' + '빗소리가 창을 두드리는 소리만 방 안을 채웠다. '.repeat(4)
+    )
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('줄표가 없는 보통 문장이다.')
+    const hang = await page.evaluate(() => {
+      const lines = [...document.querySelectorAll('.cm-line')]
+      const dash = lines.find((l) => (l.textContent || '').startsWith('—'))
+      const plain = lines.find((l) => (l.textContent || '').startsWith('줄표가 없는'))
+      const textNode = document.createTreeWalker(dash, NodeFilter.SHOW_TEXT).nextNode()
+      // 줄 전체를 감싼 범위의 조각들 = 화면에 그려진 줄(넘어간 만큼 늘어난다)
+      const whole = document.createRange()
+      whole.selectNodeContents(dash)
+      const rows = [...whole.getClientRects()].filter((r) => r.width > 1)
+      // 첫 줄에서 '— ' 다음 글자가 시작하는 x
+      const lead = document.createRange()
+      lead.setStart(textNode, 0)
+      lead.setEnd(textNode, 2) // '—' + 공백
+      return {
+        rows: rows.length,
+        textStart: lead.getBoundingClientRect().right,
+        wrapped: rows.length > 1 ? rows[1].left : null,
+        dashIndent: getComputedStyle(dash).textIndent,
+        plainIndent: getComputedStyle(plain).textIndent
+      }
+    })
+    assert(hang.rows > 1, `줄표 줄이 안 넘어가서 줄맞춤을 잴 수 없음(줄 수: ${hang.rows})`)
+    assert(
+      Math.abs(hang.textStart - hang.wrapped) < 2,
+      `넘어간 줄이 줄표 뒤 글자에 안 맞음: 글자 ${hang.textStart}px vs 넘어간 줄 ${hang.wrapped}px`
+    )
+    assert(
+      parseFloat(hang.dashIndent) < 0,
+      `줄표 줄에 내어쓰기가 안 걸림(text-indent: ${hang.dashIndent})`
+    )
+    assert.equal(parseFloat(hang.plainIndent), 0, `보통 줄까지 내어쓰기가 걸림: ${hang.plainIndent}`)
+    console.log(
+      `  ✓ 줄표 줄 내어쓰기: 넘어간 줄이 줄표 뒤 글자에 맞음(오차 ${Math.abs(hang.textStart - hang.wrapped).toFixed(2)}px) · 보통 줄은 그대로`
+    )
+
     // ── 따옴표 모양 통일(사용자 신고: 같은 글꼴인데 모양이 다르다 = 다른 글자다) ──
     await page.click('.rightpanel-tabs button:has-text("보기")')
     await page.click('.vs-quotestyle .vs-align button:has-text("둥근")')
@@ -989,7 +1074,7 @@ async function main() {
     console.log('  ✓ 자료 삭제: 확인 후 목록에서 빠지고 trash/로 옮겨짐(되돌릴 수 있음)')
 
     console.log(
-      '\n✅ 에디터 E2E: 62개 검증 통과 (…+ 따옴표탈출·모양통일 + 서식×줄바꿈 + 원고 가운데 고정 + 패널 너비 + 제목 여백 + 갤러리 보기전환 + 자료 삭제)'
+      '\n✅ 에디터 E2E: 64개 검증 통과 (…+ 따옴표탈출·모양통일 + 서식×줄바꿈 + 원고 가운데 고정 + 패널 너비 + 제목 여백 + 아래 여백 클릭 + 줄표 내어쓰기 + 갤러리 보기전환 + 자료 삭제)'
     )
   } finally {
     await app.close()

@@ -36,7 +36,8 @@ function runCommand(view: EditorView, cmd: SlashCommand, from: number, to: numbe
     return
   }
 
-  // 갈아끼우는 명령(/다듬기)의 대상 = 커서가 놓인 문단. `/`를 치는 순간 선택은 이미 지워진다.
+  // 갈아끼우는 명령(/다듬기)의 대상 = 커서가 놓인 **문단 하나**(= 그 줄, §8.1). 원고 전체가 아니다.
+  // `/`를 치는 순간 선택은 이미 지워지므로 대상은 커서 자리로 잡는다.
   const range = cmd.replaces ? paragraphAt(doc, from) : null
   if (cmd.replaces && !range) {
     useAi.getState().notify(`${cmd.label}: 커서를 다듬을 문단 안에 두고 다시 실행하세요.`)

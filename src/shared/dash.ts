@@ -50,3 +50,23 @@ export function dashRewrite(
   if (BULLET_ONLY.test(beforeCursor)) return { back: BULLET.length, insert: RULE }
   return null
 }
+
+/**
+ * 줄 앞의 **줄표 머리**(들여쓰기 + 부호 + 뒤따르는 공백)를 잡아낸다. 줄표 줄이 아니면 null.
+ *
+ * 무엇에 쓰나: 줄표로 시작한 줄이 길어서 다음 줄로 넘어가면, 넘어간 줄이 줄표 **밑**이 아니라
+ * 줄표 뒤 **글자**에 맞아야 목록처럼 읽힌다(내어쓰기, §8.1 — 사용자 요청). 그 '맞출 폭'이 곧
+ * 여기서 돌려주는 머리 부분이다. 원고 파일에는 아무것도 넣지 않는다 — 화면 조판만 바뀐다.
+ *
+ * 부호별로 공백 요구가 다른 이유:
+ *  · `•—–―─` 는 본문에 그냥 나올 일이 없는 부호라 공백 없이도 줄표로 본다(`—그래?`)
+ *  · `-`(하이픈)는 `-1도 안 남았다` 같은 평범한 문장에도 쓰이므로 **뒤에 공백이 있어야** 줄표로 본다
+ *
+ * 부호만 있고 뒤에 글자가 없는 줄(`—`, `---`)은 줄맞출 것이 없으므로 잡지 않는다.
+ */
+const DASH_LEAD = /^[　\t ]*(?:[•—–―─][ 　\t]*|-[ 　\t]+)(?=\S)/
+
+export function dashLead(lineText: string): string | null {
+  const m = DASH_LEAD.exec(lineText ?? '')
+  return m ? m[0] : null
+}

@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict'
 import { emptyQuotePair, quoteAction, quoteExitLen } from '../src/shared/quotePair'
-import { BULLET, dashRewrite } from '../src/shared/dash'
+import { BULLET, dashLead, dashRewrite } from '../src/shared/dash'
 
 let pass = 0
 function ok(label: string): void {
@@ -131,6 +131,37 @@ function ok(label: string): void {
   assert.equal(dashRewrite('-', '', ' '), null)
   assert.equal(dashRewrite('', '', '-'), null, '첫 `-` 하나만으로 변환됨')
   ok('불릿: 첫 `-` 하나·다른 글자는 그대로')
+}
+
+// ── 줄표 줄 내어쓰기(§8.1, 사용자 요청) ──
+// 넘어간 줄을 줄표 뒤 **글자**에 맞추려면 '맞출 폭' = 줄 앞 줄표 머리를 정확히 잡아야 한다.
+
+// 15b) 줄표 머리 — 들여쓰기·부호·뒤 공백까지 한 덩이로
+{
+  assert.equal(dashLead('— 그가 말했다.'), '— ')
+  assert.equal(dashLead('• 항목 하나'), '• ')
+  assert.equal(dashLead('- 하이픈 줄'), '- ')
+  assert.equal(dashLead('–  두 칸 띄운 줄'), '–  ')
+  assert.equal(dashLead('　　— 들여 쓴 줄표'), '　　— ', '들여쓰기까지 폭에 넣어야 맞는다')
+  ok('줄표 머리: 들여쓰기 + 부호 + 뒤 공백을 한 덩이로 잡는다')
+}
+
+// 15c) 부호별 규칙 — 줄표 계열은 공백 없이도, 하이픈은 공백이 있어야
+{
+  assert.equal(dashLead('—그래?'), '—', '공백 없는 줄표도 대사에 쓴다')
+  assert.equal(dashLead('-1도 안 남았다'), null, '평범한 문장이 목록으로 조판됨')
+  assert.equal(dashLead('가-나 구간'), null, '본문 속 하이픈')
+  ok('줄표 머리: 하이픈만 뒤 공백을 요구한다(평범한 문장 보호)')
+}
+
+// 15d) 맞출 글자가 없는 줄은 잡지 않는다(부호만 있는 줄·구분선·빈 줄)
+{
+  assert.equal(dashLead('—'), null)
+  assert.equal(dashLead('• '), null)
+  assert.equal(dashLead('---'), null, '가로 구분선이 목록이 됨')
+  assert.equal(dashLead(''), null)
+  assert.equal(dashLead('그냥 서술 문장이다.'), null)
+  ok('줄표 머리: 부호뿐인 줄·구분선·보통 줄은 그대로')
 }
 
 // ── Enter로 따옴표 밖으로(§6.1c) ──

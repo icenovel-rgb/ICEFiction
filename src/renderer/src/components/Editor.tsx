@@ -26,6 +26,8 @@ import { setEditorView } from '../lib/editorBridge'
 import { acceptGhost, clearGhost, ghostField, type GhostState } from '../lib/ghostText'
 import { slashMenu } from '../lib/slashMenu'
 import { markdownExtras } from '../lib/markdownView'
+import { dashHang } from '../lib/dashHang'
+import { padClickToEnd } from '../lib/padClick'
 import {
   alignCommand,
   exitQuoteOnEmptyLine,
@@ -392,6 +394,7 @@ export function Editor(): React.ReactElement {
            */
           markdown({ extensions: [{ remove: ['SetextHeading'] }] }),
           ...markdownExtras,
+          dashHang, // 줄표 줄은 넘어간 줄을 줄표 뒤 글자에 맞춘다(내어쓰기, §8.1)
           smartTyping, // 따옴표 자동 짝 + 줄 앞 `--` → 불릿(§6.1c)
           ghostField, // AI 제안(흐린 글씨) — 문서를 건드리지 않는 위젯(§6.1a)
           slashMenu(), // 본문 `/` 명령(§6.1b)
@@ -446,6 +449,7 @@ export function Editor(): React.ReactElement {
           lineNumbers(),
           paperTheme,
           bottomScrollMargin,
+          padClickToEnd, // 아래 여백을 눌러도 커서가 원고 끝으로(§8.2)
           editableRef.current.of(
             EditorView.editable.of(useStore.getState().activePath != null)
           ),
