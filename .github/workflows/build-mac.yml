@@ -101,7 +101,15 @@ jobs:
             || { echo "::error::dmg가 서명되지 않았다 — electron-builder.yml의 dmg.sign 확인"; exit 1; }
           xcrun notarytool submit "$DMG" \
             --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait
-          xcrun stapler staple "$DMG"
+          # stapler는 Apple CloudKit에서 티켓을 받아 오는데 가끔 연결이 끊긴다(2026-11-01: 공증은
+          # Accepted인데 "The network connection was lost… Error 68"로 실패). 공증을 다시 받을 일은
+          # 아니고 붙이기만 다시 하면 되므로 잠깐 쉬고 재시도한다.
+          for i in 1 2 3 4 5; do
+            xcrun stapler staple "$DMG" && break
+            echo "stapler 실패 ($i/5) — 20초 뒤 재시도"
+            if [ "$i" = 5 ]; then exit 68; fi
+            sleep 20
+          done
           echo "── 검증 ──"
           xcrun stapler validate "$DMG"
           spctl -a -vvv -t open --context context:primary-signature "$DMG"
