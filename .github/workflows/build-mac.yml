@@ -31,7 +31,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14 # Apple Silicon
+          # macos-14는 2026-11-02 퇴역 — 그 전 브라운아웃 기간에 잡이 시작도 못 하고 취소됐다
+          # (2026-11-01 v0.12.4 첫 실행: "scheduled macOS 14 runner image brownout"). macos-15는 ARM64.
+          - runner: macos-15 # Apple Silicon
             arch: arm64
           # Intel(x64)은 뺐다. macos-13 라벨이 GitHub 러너 목록에서 사라져 잡에 러너가 배정되지
           # 않고 queued로 방치된다(2026-07-26 실행이 14시간 넘게 대기, 같은 실행의 arm64는 성공).
