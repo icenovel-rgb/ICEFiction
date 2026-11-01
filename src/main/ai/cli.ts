@@ -7,13 +7,14 @@
  * ICEWriter cli_text.py 노하우: 프롬프트는 argv가 아니라 stdin(Windows 8191자 제한·특수문자 회피),
  * 유휴/하드 타임아웃, 취소 시 프로세스 트리 종료, Windows 콘솔창 숨김, macOS GUI PATH 보강.
  */
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { promises as fsp } from 'node:fs'
 import { join } from 'node:path'
 import type { AIConnStatus, ChatMessage } from '../../shared/types'
 import type { TextAI } from './adapter'
 import { attachmentsToText } from './attachments'
 import { AIError, classifyError } from './errors'
+import { codexModelsFromCache } from './codexModel'
 import { probeVersion, runProc } from './proc'
 
 const IDLE_MS = 300_000
@@ -41,20 +42,6 @@ function flattenPrompt(messages: ChatMessage[], projectRoot?: string): string {
     ? `원고 폴더(직접 읽어도 됩니다. 다만 **읽기만** 하고 파일을 고치지 마세요): ${projectRoot}\n\n`
     : ''
   return system ? `${dirNote}${system}\n\n${convo}` : `${dirNote}${convo}`
-}
-
-/** codex 모델 목록을 로컬 캐시(~/.codex/models_cache.json)에서 읽는다 — 드롭다운 자동 채움. */
-async function codexModels(): Promise<string[]> {
-  try {
-    const raw = await fsp.readFile(join(homedir(), '.codex', 'models_cache.json'), 'utf8')
-    const json = JSON.parse(raw) as { models?: { slug?: string; visibility?: string }[] }
-    const all = json.models ?? []
-    const listed = all.filter((m) => m.visibility === 'list')
-    const pick = listed.length > 0 ? listed : all
-    return [...new Set(pick.map((m) => m.slug).filter((s): s is string => !!s))]
-  } catch {
-    return []
-  }
 }
 
 /** codex --json 이벤트에서 assistant 텍스트를 폭넓게 추출(버전별 스키마 차이 방어). */
@@ -226,7 +213,7 @@ export class CliAI implements TextAI {
   async listModels(): Promise<string[]> {
     // claude: 유효 별칭. codex: 로컬 모델 캐시에서. 기타: 비워두면 CLI 기본 사용.
     if (this.flavor === 'claude') return ['sonnet', 'opus', 'fable']
-    if (this.flavor === 'codex') return codexModels()
+    if (this.flavor === 'codex') return codexModelsFromCache()
     return []
   }
 

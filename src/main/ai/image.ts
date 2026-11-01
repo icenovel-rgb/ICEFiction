@@ -5,16 +5,19 @@
  *
  * 엔진(실측으로 전부 동작 확인):
  *  · agy    `agy -p <한 줄> --add-dir <출력폴더> --dangerously-skip-permissions`   ← 기본
- *  · codex  `codex exec -s workspace-write --add-dir <출력폴더> --model <일반모델> -`  (프롬프트는 stdin)
+ *  · codex  `codex exec -s workspace-write --add-dir <출력폴더> -`  (프롬프트는 stdin, 모델은 사용자 기본)
  *  · gemini `gemini -p <한 줄>`  (best-effort)
  *
  * ⚠️ 프롬프트를 argv로 넘기지 않는다. Windows는 cmd.exe를 거치므로 줄바꿈이 든 인자가 깨지고
  *    8191자 제한에 걸린다. 지시문은 **임시 파일**에 쓰고, CLI에는 "그 파일을 읽고 그대로 하라"는
  *    한 줄만 준다(shared/imagePrompt.ts).
- * ⚠️ codex는 `*-codex` 모델이 이미지 툴을 지원하지 않는다 → 일반 모델(gpt-5.5)을 쓴다.
+ * ⚠️ codex 모델 이름을 **앱에 박아 두지 않는다**(codexModel.ts). 한때 `--model gpt-5.5`를 고정했다가
+ *    계정 목록에서 그 모델이 빠지자 "model is not supported"로 매번 죽었다(2026-11-01). 사용자의
+ *    codex 기본 모델을 그대로 쓰고, `*-codex`(이미지 툴 없음)일 때만 캐시에서 일반 모델을 집는다.
  *
  * 성패 판정은 CLI의 종료코드가 아니라 **결과 파일이 실제로 생겼는지**로 한다(에이전트는 실패해도
- * 0으로 끝나며 변명을 늘어놓는 일이 잦다).
+ * 0으로 끝나며 변명을 늘어놓는 일이 잦다). 다만 파일이 안 생겼을 땐 CLI가 stderr에 남긴 마지막
+ * 오류 줄을 메시지에 붙인다 — "파일을 만들지 못했습니다"만으로는 사용자가 손쓸 길이 없다.
  */
 import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -27,14 +30,12 @@ import {
   oneLinePrompt,
   type InstructionInput
 } from '../../shared/imagePrompt'
+import { codexImageModelArgs } from './codexModel'
 import { AIError } from './errors'
-import { probeVersion, runProc } from './proc'
+import { probeVersion, runProc, type RunResult } from './proc'
 
 const IDLE_MS = 240_000 // 그림 한 장에 1~2분 — 조용한 구간이 길다
 const HARD_MS = 900_000
-
-/** codex는 이미지 툴을 지원하는 일반 모델을 써야 한다(*-codex 모델은 미지원). */
-const CODEX_IMAGE_MODEL = 'gpt-5.5'
 
 const ENGINE_LABEL: Record<ImageEngine, string> = {
   agy: 'Antigravity (agy)',
@@ -146,10 +147,13 @@ export class ImageService {
         const s = t.trim()
         if (s) onProgress(s.slice(0, 200))
       }
+      let run: RunResult
       if (engine === 'codex') {
         // codex는 stdin으로 프롬프트를 받는다('-') → 지시문을 통째로 넣는다.
+        // 모델은 사용자 기본을 따른다(고정값 금지 — 파일 머리 주석). 필요할 때만 --model이 붙는다.
         const outDir = dirname(input.destAbsPath)
-        await runProc(
+        const modelArgs = await codexImageModelArgs()
+        run = await runProc(
           ENGINE_LABEL[engine],
           'codex',
           [
@@ -161,15 +165,14 @@ export class ImageService {
             '--skip-git-repo-check',
             '--color',
             'never',
-            '--model',
-            CODEX_IMAGE_MODEL,
+            ...modelArgs,
             '-'
           ],
           signal,
           { idleMs: IDLE_MS, hardMs: HARD_MS, stdin: instruction, onLine: line }
         )
       } else if (engine === 'agy') {
-        await runProc(
+        run = await runProc(
           ENGINE_LABEL[engine],
           'agy',
           [
@@ -183,7 +186,7 @@ export class ImageService {
           { idleMs: IDLE_MS, hardMs: HARD_MS, onLine: line }
         )
       } else {
-        await runProc(
+        run = await runProc(
           ENGINE_LABEL[engine],
           'gemini',
           ['-p', oneLinePrompt(instrPath)],
@@ -193,7 +196,8 @@ export class ImageService {
       }
 
       // 성패는 종료코드가 아니라 **파일**로 판정한다 — 에이전트는 실패해도 0으로 끝나곤 한다.
-      await this.assertFresh(input.destAbsPath, startedAt)
+      // 파일이 없으면 CLI의 마지막 오류 줄을 붙여 "왜"를 알린다(예: 모델 미지원·로그인 만료).
+      await this.assertFresh(input.destAbsPath, startedAt, cliHint(run))
     } finally {
       void fs.rm(instrPath, { force: true }).catch(() => {})
     }
@@ -230,17 +234,41 @@ export class ImageService {
     }
   }
 
-  /** 결과 PNG가 실제로 새로 생겼는지(존재 + 이번 실행 이후 수정 + 내용 있음). */
-  private async assertFresh(dest: string, startedAt: number): Promise<void> {
+  /**
+   * 결과 PNG가 실제로 새로 생겼는지(존재 + 이번 실행 이후 수정 + 내용 있음).
+   * hint는 CLI가 남긴 오류 요약 — 파일이 없을 때만 메시지에 붙인다.
+   */
+  private async assertFresh(dest: string, startedAt: number, hint = ''): Promise<void> {
     let st
     try {
       st = await fs.stat(dest)
     } catch {
-      throw new Error('이미지 파일을 만들지 못했습니다')
+      throw new Error(hint ? `이미지 파일을 만들지 못했습니다 — ${hint}` : '이미지 파일을 만들지 못했습니다')
     }
     if (st.size < 1000) throw new Error('생성된 이미지가 비어 있습니다')
     if (st.mtimeMs < startedAt - 5000) throw new Error('이전 이미지가 그대로입니다(새로 생성 안 됨)')
   }
+}
+
+/**
+ * CLI 실행 결과에서 사용자에게 보여 줄 한 줄 — stderr 꼬리 중 오류답게 생긴 마지막 줄, 없으면
+ * 마지막 줄. codex는 "ERROR: The '…' model is not supported…"처럼 stderr에 이유를 남긴다(실측).
+ * 진행 로그(hook:, workdir: 등)가 섞여 있으므로 오류 낱말이 든 줄을 우선한다.
+ */
+export function cliHint(run: RunResult | undefined): string {
+  if (!run) return ''
+  const lines = run.tail
+    .join('\n')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  const errLike = [...lines]
+    .reverse()
+    .find((l) => /error|not supported|not found|unauthor|login|limit|quota|denied|fail/i.test(l))
+  const pick = (errLike ?? lines[lines.length - 1] ?? '').slice(0, 200)
+  const code = run.code != null && run.code !== 0 ? `code ${run.code}` : ''
+  if (pick && code) return `${pick} (${code})`
+  return pick || code
 }
 
 export const imageService = new ImageService()

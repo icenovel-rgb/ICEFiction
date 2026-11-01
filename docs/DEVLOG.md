@@ -1051,3 +1051,50 @@ ViewPlugin으로 만들었다. `preventDefault()`가 핵심 — 그게 없으면
 (내장 나눔·KoPubWorld는 저장소에 들어 있고, 시스템 글꼴로 대체되더라도 캔버스가 같은 스택을
 그대로 해석한다). 다만 실측은 Windows에서만 했다 — 맥에서 확인하려면 `npm run test:e2e`를
 Mac에서 한 번 돌리면 된다(CI는 typecheck·유닛까지만 돈다).
+
+
+## 2026-11-01 — 그림이 한 장도 안 나온다: 박아 둔 모델 이름 (v0.12.4)
+
+사용자 보고 "이미지가 안 나온다. Codex로 그리는 건데 작동을 안 한다." 앱 화면에는
+"이미지 파일을 만들지 못했습니다"만 떴다 — **왜**가 없었다.
+
+### 진단 (증거)
+
+- `~/.codex/sessions/2026/11/01/rollout-…21-45-22….jsonl` — 앱(originator `codex_exec`)이 띄운
+  세션의 `task_complete`에 오류가 그대로 남아 있었다:
+  `The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account.` (`model_not_found`)
+- `image.ts`가 `--model gpt-5.5`를 **고정값**으로 넘기고 있었다(`CODEX_IMAGE_MODEL`). 그런데
+  `~/.codex/models_cache.json`(11/1 갱신)의 목록은 gpt-6.1-sol·gpt-6-astra·gpt-6.1-terra·gpt-6-sol·
+  gpt-6-luna·gpt-5.6-* 뿐 — gpt-5.5가 빠졌다. 사용자 기본 모델(config.toml)은 gpt-6.1-sol.
+- 터미널에서 같은 명령을 `--model gpt-5.5`로 돌리면 3초 만에 exit 1, stderr에 위 ERROR 한 줄.
+  **`--model`을 빼면** 35초 만에 1024×1024 PNG가 나온다(빨간 원, 실제 확인).
+- 앱이 이유를 못 보여 준 까닭: `runProc`가 stderr 꼬리(`tail`)를 돌려주는데 `image.ts`는 그걸
+  버리고 파일 유무만 봤다.
+
+### 고친 것
+
+- **`src/main/ai/codexModel.ts` 신설** — 이미지용 모델 이름을 앱에 박지 않는다.
+  ① 사용자의 codex 기본 모델(config.toml 최상위 `model`)이 일반 모델이면 `--model`을 **안 넘긴다**
+  (계정이 지원한다고 보장되는 유일한 값). ② `*-codex` 계열(이미지 툴 없음)이거나 설정이 없으면
+  모델 캐시에서 목록에 보이는 일반 모델 하나. ③ 그것도 없으면 플래그 없이.
+  `cli.ts`의 드롭다운용 캐시 읽기도 이 모듈로 옮겨 한 군데서 읽는다.
+- **실패 이유를 붙인다** — 파일이 안 생겼을 때 CLI의 stderr에서 오류답게 생긴 마지막 줄과
+  종료코드를 메시지에 단다(`cliHint`). 이제 "이미지 파일을 만들지 못했습니다 — ERROR: The '…' model
+  is not supported … (code 1)"처럼 뜬다.
+
+### 검증 (증거 기반)
+
+- 유닛 **235**(신규 6 — `tests/codexmodel.test.mts`, `npm test` 편입). 1번이 이번 사건 그대로:
+  기본 모델이 멀쩡하면 `--model`을 넘기지 않는지. 나머지는 `*-codex` 폴백·설정/캐시 없음·섹션 안
+  `model` 무시·캐시 파싱·`cliHint`(실측 stderr 로그 그대로 넣어 오류 줄이 뽑히는지).
+- **실제 코드 경로 실측** — `ImageService.generate({ engine: 'codex', ratio: '3:2' })`를 tsx로 직접
+  호출 → 35초, 1536×1024 PNG 생성, `=> EXISTS` 출력. (CLI 직접 호출이 아니라 앱 모듈 그대로.)
+- typecheck 0 · build 성공 · 이미지 E2E **11 무회귀**(스텁 배선).
+
+### 실측으로 알아낸 것
+
+- **모델 이름은 앱이 알 수 없는 값이다.** OpenAI가 목록을 바꾸면 그날로 고정값은 죽는다. 사용자가
+  `codex`에서 쓰고 있는 기본값을 그대로 쓰는 것이 유일하게 안전하다. 텍스트 쪽(`cli.ts`)은 처음부터
+  사용자가 고른 모델을 넘기고 비우면 플래그를 안 붙였다 — 그림 쪽만 고정값이었다.
+- **"파일이 생겼나"로 성패를 판정하는 설계는 옳았지만, 실패 이유까지 버리면 안 된다.** 종료코드로
+  판정하지 않는 것과 stderr를 보여 주지 않는 것은 다른 얘기다.
